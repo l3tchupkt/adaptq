@@ -61,16 +61,41 @@ make test
 sudo make install
 ```
 
-### Python Bindings (pybind11)
+### Python Native Application
 
-To compile the Python module, ensure `pybind11` and `numpy` are installed.
+Use the heavily simplified native python API to manage sequence context directly in multi-head arrays implicitly.
 
-```bash
-pip install pybind11 numpy matplotlib
-bash build_py.sh
+```python
+import numpy as np
+from adaptq import Engine
 
-# Run the real-time Python streaming benchmark
-LD_LIBRARY_PATH=. python3 test_realtime.py
+engine = Engine(dim=128, heads=4, bits=4, capacity=2048)
+
+k = np.random.randn(4, 128).astype(np.float32)
+v = np.random.randn(4, 128).astype(np.float32)
+q = np.random.randn(4, 128).astype(np.float32)
+
+# Appends across all heads seamlessly
+engine.append(k, v)
+# Computes cross-attention dynamically 
+output = engine.compute(q)
+```
+
+### PyTorch Integration (nn.Module)
+
+For deep learning context flows, pass standard continuous PyTorch `(batch, heads, dim)` generation tensors through AdapTQ as a standard drop-in `torch.nn.Module`:
+
+```python
+import torch
+from adaptq import AdaptQAttention
+
+layer = AdaptQAttention(dim=128, heads=4, bits=4)
+
+k = torch.randn(1, 4, 128)
+v = torch.randn(1, 4, 128)
+q = torch.randn(1, 4, 128)
+
+out = layer(q, k, v)
 ```
 
 ## 📊 Real-world Benchmarks

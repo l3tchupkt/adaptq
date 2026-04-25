@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=42", "pybind11>=2.6.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adaptq"
+version = "0.1.0"
+authors = [
+  { name="Lakshmikanthan K (letchupkt)", email="letchupkt.dev@gmail.com" },
+]
+description = "Adaptive Streaming Vector Quantization KV Cache for LLMs"
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = [
+    "numpy",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/l3tchupkt/adaptq"
