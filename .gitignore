@@ -1,0 +1,10 @@
+*.o
+*.so
+adapTQ_demo
+standalone_test
+adaptq_realtime_bench.png
+__pycache__/
+*.so
+adapters/*.so
+adapters/standalone_test
+build_py.sh
