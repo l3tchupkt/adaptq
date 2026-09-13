@@ -1,4 +1,5 @@
 import numpy as np
+
 try:
     import adaptq_py
 except ImportError:

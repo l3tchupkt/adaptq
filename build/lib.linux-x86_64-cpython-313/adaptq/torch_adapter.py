@@ -4,8 +4,10 @@ try:
 except ImportError:
     raise ImportError("PyTorch is required to use the AdaptQ PyTorch wrapper.")
 
-from .core import Engine
 import numpy as np
+
+from .core import Engine
+
 
 class AdaptQAttention(nn.Module):
     """

@@ -41,7 +41,7 @@ We use a targeted $\pm 3\sigma$ variance soft-clipping on FWHT distributions wit
 - **Cosine Similarity**: ~0.947 (1.000 = exact identical match)
 - **Mean Squared Error (MSE)**: ~1.8e-04
 
-![AdapTQ Benchmarks](adaptq_realtime_bench.png)
+<img width="2400" height="600" alt="adaptq_realtime_bench" src="https://github.com/user-attachments/assets/55801a2b-f68c-4ffa-b101-a9922c94a89a" />
 
 ## 🏗 Architecture & Features
 
@@ -50,15 +50,34 @@ We use a targeted $\pm 3\sigma$ variance soft-clipping on FWHT distributions wit
 - **Zero Heap Allocations**: Pure stack/thread-local memory buffers in the hot path.
 - **Pre-Compute LUTs**: Dot products execute directly against packed indices in SIMD registers—avoiding full dequantization inside the attention kernel.
 
+Your install section is fine, just add the PyPI path cleanly so users don’t get confused.
+
+Use this:
+
+---
+
 ## 🛠 Installation & Integration
+
+### 🔹 Install from PyPI (recommended)
+
+```bash
+pip install adaptq
+```
+
+---
+
+### 🔹 Install from source (latest/dev)
 
 ```bash
 git clone https://github.com/l3tchupkt/adaptq.git
 cd adaptq
 
-# Build python PyBind modules natively
-pip install . 
+# Build Python bindings (PyBind11)
+pip install .
 ```
+
+---
+
 
 ### Python Native Application
 

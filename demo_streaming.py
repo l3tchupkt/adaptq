@@ -1,4 +1,9 @@
-import sys, os, time, math, ctypes
+import ctypes
+import math
+import os
+import sys
+import time
+
 import numpy as np
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
