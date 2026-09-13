@@ -1,5 +1,7 @@
 import numpy as np
+
 from adaptq import AdapTQ
+
 
 def main():
     print("--- AdapTQ Example ---")

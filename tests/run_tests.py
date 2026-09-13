@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import sys, io
+import sys
+
 # Force UTF-8 output on Windows (avoids CP1252 encoding errors)
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -20,7 +21,6 @@ Usage:
 """
 
 import argparse
-import ctypes
 import math
 import os
 import random

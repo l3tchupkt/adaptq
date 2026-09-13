@@ -4,13 +4,11 @@ AdapTQ Python demo — calls the compiled C++ binary and parses its output.
 Also provides a pure-Python reference implementation for validation.
 """
 
-import subprocess
-import sys
-import os
 import math
+import os
 import random
-import struct
-import time
+import subprocess
+
 
 # --------------------------------------------------------------------------
 # Pure-Python reference: FWHT

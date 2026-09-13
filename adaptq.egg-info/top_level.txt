@@ -1,2 +1,0 @@
-adaptq
-adaptq_py

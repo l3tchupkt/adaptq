@@ -1,6 +1,5 @@
-import os
-from setuptools import setup, Extension, find_packages
 import pybind11
+from setuptools import Extension, find_packages, setup
 
 ext_modules = [
     Extension(

@@ -1,7 +1,8 @@
-import torch
+
 import numpy as np
-import sys
-from adaptq import AdaptQAttention, Engine
+import torch
+
+from adaptq import AdaptQAttention
 
 # Ensure tests fail actively if thresholds surpassed
 THRESHOLD_MSE_MAX = 5e-3

@@ -1,7 +1,10 @@
+import time
+
 import torch
 import torch.nn.functional as F
-import time
-from adaptq import AdaptQAttention, Engine
+
+from adaptq import AdaptQAttention
+
 
 def generate_causal_mask(seq_len):
     return torch.tril(torch.ones(seq_len, seq_len)).bool()
