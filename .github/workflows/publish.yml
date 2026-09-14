@@ -28,9 +28,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install build twine setuptools pybind11
 
-      - name: Build Source Distribution (sdist) and Wheel
+      - name: Build Source Distribution (sdist)
         run: |
-          python -m build
+          python -m build --sdist
 
       - name: Check metadata with Twine
         run: twine check dist/*
