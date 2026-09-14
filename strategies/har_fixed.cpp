@@ -51,11 +51,28 @@ static inline uint8_t bits_to_tag(int bits) {
 
 /* ---- Thread-local scratch (sizes match quantizer.cpp constants) -------- */
 static constexpr int TL_BUF = 1024;
-static thread_local float   tl_q_rot[TL_BUF];
-static thread_local float   tl_v_acc[TL_BUF];
-static thread_local float   tl_logits[65536];
-static thread_local int     tl_slots[65536];
-static thread_local int     tl_ord[65536];
+
+struct ThreadLocalWorkspace {
+  std::vector<float> logits;
+  std::vector<int> slots;
+  std::vector<int> ord;
+  std::vector<float> q_rot;
+  std::vector<float> v_acc;
+
+  void ensure_capacity(int n, int padded) {
+    if (logits.size() < (size_t)n) {
+      logits.resize(n);
+      slots.resize(n);
+      ord.resize(n);
+    }
+    if (q_rot.size() < (size_t)padded) {
+      q_rot.resize(padded);
+      v_acc.resize(padded);
+    }
+  }
+};
+
+static thread_local ThreadLocalWorkspace tl_ws;
 
 /* ========================================================================
  * HARCompression — ICompression
@@ -186,10 +203,15 @@ public:
         const int bits   = compress_.bits;
         if (!n) { memset(out, 0, dim * sizeof(float)); return 0; }
 
-        assert(padded <= TL_BUF && n <= 65536);
+        tl_ws.ensure_capacity(n, padded);
+        float *logits = tl_ws.logits.data();
+        int *slots    = tl_ws.slots.data();
+        int *ord      = tl_ws.ord.data();
+
+        assert(padded <= TL_BUF);
 
         /* 1. Rotate query (L2-normalise → D-apply → FWHT → scale) */
-        float *qr = tl_q_rot;
+        float *qr = tl_ws.q_rot.data();
         memcpy(qr, q, dim * sizeof(float));
         for (int i = dim; i < padded; ++i) qr[i] = 0.f;
         float qn = 0.f;
@@ -206,44 +228,44 @@ public:
         const float  isp    = 1.f / sqrtf((float)padded);
 
         /* 2. Build slot list from storage backend */
-        for (int i = 0; i < n; ++i) tl_slots[i] = i;
+        for (int i = 0; i < n; ++i) slots[i] = i;
 
         /* 3. K-dot + softmax (scalar reference path) */
         float mx = -1e30f;
         for (int i = 0; i < n; ++i) {
-            CompressResult kr = ctx.storage->read((StorageSlot)tl_slots[i]);
+            CompressResult kr = ctx.storage->read((StorageSlot)slots[i]);
             float dot = kdot_ref(qr, kr.data, cb, padded, bits);
-            tl_logits[i] = dot * attn_s * kr.scale;
-            if (tl_logits[i] > mx) mx = tl_logits[i];
+            logits[i] = dot * attn_s * kr.scale;
+            if (logits[i] > mx) mx = logits[i];
         }
         float sv = 0.f;
         for (int i = 0; i < n; ++i) {
-            tl_logits[i] = expf(tl_logits[i] - mx);
-            sv += tl_logits[i];
+            logits[i] = expf(logits[i] - mx);
+            sv += logits[i];
         }
         float inv_s = 1.f / sv;
-        for (int i = 0; i < n; ++i) tl_logits[i] *= inv_s;
+        for (int i = 0; i < n; ++i) logits[i] *= inv_s;
 
         /* 4. V accumulation with optional sparse-V */
-        float *acc = tl_v_acc;
+        float *acc = tl_ws.v_acc.data();
         memset(acc, 0, padded * sizeof(float));
 
         if (v_mass_ <= 0.f) {
             for (int i = 0; i < n; ++i) {
-                CompressResult vr = ctx.storage->read((StorageSlot)tl_slots[i] + (StorageSlot)ctx.cache_capacity);
-                vaccum_ref(acc, vr.data, vr.scale * tl_logits[i] * isp, cb, padded, bits);
+                CompressResult vr = ctx.storage->read((StorageSlot)slots[i] + (StorageSlot)ctx.cache_capacity);
+                vaccum_ref(acc, vr.data, vr.scale * logits[i] * isp, cb, padded, bits);
             }
         } else {
             /* Sparse-V: accumulate only tokens contributing to v_mass_ of total */
-            for (int i = 0; i < n; ++i) tl_ord[i] = i;
-            std::sort(tl_ord, tl_ord + n,
-                      [](int a, int b){ return tl_logits[a] > tl_logits[b]; });
+            for (int i = 0; i < n; ++i) ord[i] = i;
+            std::sort(ord, ord + n,
+                      [&](int a, int b){ return logits[a] > logits[b]; });
             float mass = 0.f;
             for (int i = 0; i < n && mass < v_mass_; ++i) {
-                int idx = tl_ord[i];
-                CompressResult vr = ctx.storage->read((StorageSlot)tl_slots[idx] + (StorageSlot)ctx.cache_capacity);
-                vaccum_ref(acc, vr.data, vr.scale * tl_logits[idx] * isp, cb, padded, bits);
-                mass += tl_logits[idx];
+                int idx = ord[i];
+                CompressResult vr = ctx.storage->read((StorageSlot)slots[idx] + (StorageSlot)ctx.cache_capacity);
+                vaccum_ref(acc, vr.data, vr.scale * logits[idx] * isp, cb, padded, bits);
+                mass += logits[idx];
             }
         }
 
@@ -255,7 +277,7 @@ public:
         if (quality_) {
             float entropy = 0.f;
             for (int i = 0; i < n; ++i) {
-                float w = tl_logits[i];
+                float w = logits[i];
                 if (w > 1e-12f) entropy -= w * logf(w);
             }
             /* Normalise: max entropy = log(n). High entropy → safe quantisation. */

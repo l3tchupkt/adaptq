@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.18)
+project(test_shared CXX)
+add_library(core_lib STATIC core/adaptq_c_api.cpp)
+set_target_properties(core_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
+add_library(adaptq SHARED)
+target_link_libraries(adaptq PRIVATE -Wl,--whole-archive core_lib -Wl,--no-whole-archive)

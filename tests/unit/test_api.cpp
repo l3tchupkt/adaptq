@@ -177,3 +177,34 @@ TEST_CASE("adaptq_features returns valid bitmask", "[api]") {
     REQUIRE((f & ADAPTQ_FEAT_HYBRID)   != 0);
     REQUIRE((f & ADAPTQ_FEAT_SPARSE_V) != 0);
 }
+
+/* ---- Context Limits (Issue #22) --------------------------------------- */
+
+TEST_CASE("adaptq context handles sizes around and above 65536 tokens", "[api][limits]") {
+    // We test 65535, 65536, 65537, and 100000.
+    // We create a single cache with capacity 100005 to cover everything.
+    adaptq_ctx_t h = adaptq_create(64, 4, 100005, 42, 0.f, 0);
+    REQUIRE(h != nullptr);
+
+    float k[64] = {}, v[64] = {}, q[64] = {}, out[64];
+    fill_vec(k, 64, 0.1f);
+    fill_vec(v, 64, 0.1f);
+    fill_vec(q, 64, 0.1f);
+
+    int test_sizes[] = { 65535, 65536, 65537, 100000 };
+    int current_size = 0;
+
+    for (int target : test_sizes) {
+        // Append tokens until we reach the target size
+        while (current_size < target) {
+            adaptq_append(h, k, v, current_size);
+            current_size++;
+        }
+        
+        // Compute should not assert/crash and return exactly the target size
+        int n = adaptq_compute(h, q, out);
+        REQUIRE(n == target);
+    }
+
+    adaptq_destroy(h);
+}
