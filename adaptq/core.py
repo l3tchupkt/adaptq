@@ -1,8 +1,10 @@
 import numpy as np
 try:
     import adaptq_py
+    _ADAPTQ_PY_AVAILABLE = True
 except ImportError:
-    raise ImportError("AdapTQ C++ extension not built. Run 'pip install .' to build from source.")
+    adaptq_py = None          # type: ignore[assignment]
+    _ADAPTQ_PY_AVAILABLE = False
 
 class Engine:
     """
@@ -15,6 +17,12 @@ class Engine:
     def __init__(self, dim: int, heads: int, bits: int = 4, 
                  capacity: int = 4096, seed: int = 42, 
                  v_mass: float = 0.95, hybrid_thresh: int = 512):
+        if not _ADAPTQ_PY_AVAILABLE:
+            raise ImportError(
+                "AdapTQ C++ extension (adaptq_py) not built.\n"
+                "Build it with: pip install .\n"
+                "Requires a C++17 compiler and pybind11."
+            )
         self.dim = dim
         self.heads = heads
         self.bits = bits

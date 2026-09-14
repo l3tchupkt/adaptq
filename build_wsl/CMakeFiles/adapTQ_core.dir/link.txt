@@ -1,2 +1,0 @@
-/usr/bin/ar qc libadapTQ_core.a CMakeFiles/adapTQ_core.dir/core/fwht.cpp.o CMakeFiles/adapTQ_core.dir/core/codebook.cpp.o CMakeFiles/adapTQ_core.dir/core/quantizer.cpp.o CMakeFiles/adapTQ_core.dir/core/adaptq_c_api.cpp.o CMakeFiles/adapTQ_core.dir/core/adaptq_backend_vtable.cpp.o CMakeFiles/adapTQ_core.dir/cache/ring_buffer.cpp.o CMakeFiles/adapTQ_core.dir/attention/attention.cpp.o CMakeFiles/adapTQ_core.dir/utils/timer.cpp.o
-/usr/bin/ranlib libadapTQ_core.a

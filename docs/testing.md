@@ -6,9 +6,12 @@ AdapTQ has three test layers that together validate the full stack:
 
 | Layer | Runner | What it covers |
 |-------|--------|----------------|
-| C++ unit tests | `ctest` | Algorithms, storage, C ABI |
+| C++ unit tests (V1) | `ctest` | Algorithms, storage, C ABI |
 | C++ conformance tests | `ctest` | `IKVStrategy` contract |
+| C++ unit tests (V2) | `ctest` | RuntimeContext, SessionSnapshot, ReplayEngine |
 | Python validation suite | `python tests/run_tests.py` | MSE calibration, benchmarks, ctypes C ABI, cross-validation |
+
+**Total: 67 C++ tests (V1: 38 + V2: 29) + 5 Python stages.**
 
 ---
 
@@ -18,19 +21,18 @@ AdapTQ has three test layers that together validate the full stack:
 
 ```bash
 cd adapTQ
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j4
-ctest --output-on-failure
+cmake -B build_v2 -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build_v2 --parallel 4
+cd build_v2 && ctest --output-on-failure -j4
 ```
 
 ### Windows (MSVC + Ninja) — from VS Developer Command Prompt
 
 ```cmd
 cd adapTQ
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=cl
-cmake --build build --parallel
-cd build && ctest --output-on-failure
+cmake -B build_v2 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=cl
+cmake --build build_v2 --parallel
+cd build_v2 && ctest --output-on-failure
 ```
 
 ### Python validation suite (Windows or Linux)
@@ -44,11 +46,59 @@ Stages:
 
 | # | Stage | What it proves |
 |---|-------|----------------|
-| 1 | C++ ctest via WSL | 38 C++ tests pass |
+| 1 | C++ ctest via WSL | 67 C++ tests pass (V1: 38, V2: 29) |
 | 2 | MSE calibration verification | Threshold changes are justified |
 | 3 | Python reference benchmark | Throughput and attention correctness |
 | 4 | C ABI integration (ctypes) | C++ library callable from Python |
 | 5 | Cross-validation | C++ cosine-similar to FP32 reference |
+
+## V2 Test Descriptions
+
+### RuntimeContext (10 tests)
+
+| Test | What it verifies |
+|------|-----------------|
+| `init does not throw` | Basic construction with config |
+| `get_strategy / get_storage return non-null` | Per-head initialization |
+| `append increases storage usage` | Hot-path write path |
+| `compute returns valid ComputeMetrics after append` | Full compute path |
+| `compute on empty cache returns zero output` | Edge case: empty cache |
+| `reset clears storage and resets token_pos` | Session reset |
+| `multiple appends accumulate` | 10-token accumulation |
+| `fp_passthrough strategy init` | Alternative strategy factory |
+| `strategy_factory_by_name registry` | Name-to-factory lookup |
+| `token log is populated when log_tokens=true` | Snapshot prerequisite |
+
+### SessionSnapshot (8 tests)
+
+| Test | What it verifies |
+|------|-----------------|
+| `capture from RuntimeContext is valid` | Basic capture |
+| `capture without token log has no log` | Minimal capture mode |
+| `capture with token log contains entries` | Token log correctness |
+| `save and load roundtrip` | Binary I/O fidelity |
+| `load rejects bad magic` | Format guard |
+| `load missing file throws` | Error handling |
+| `strategy state captured when IReplayHooks available` | IReplayHooks integration |
+| `head snapshot has valid storage data` | Storage data size correctness |
+| `save/load is deterministic for same input` | Bit-exact reproducibility |
+
+### ReplayEngine (9 tests)
+
+| Test | What it verifies |
+|------|-----------------|
+| `full replay completes without error` | Happy path |
+| `full replay produces non-empty report` | Metrics collection |
+| `replay without token log throws` | Missing log guard |
+| `branch at 0 leaves context empty` | Branch at start |
+| `branch at N puts N tokens in storage` | Branch warm-up |
+| `branch at from_token > n_tokens throws` | Out-of-range guard |
+| `cross-strategy replay with fp_passthrough` | Strategy override |
+| `cross-strategy replay unknown strategy throws` | Registry guard |
+| `replay strategy name matches context strategy` | Report metadata |
+| `full replay and branch produce same storage at branch point` | Determinism |
+
+
 
 ---
 

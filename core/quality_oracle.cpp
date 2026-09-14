@@ -1,5 +1,6 @@
-#include "../../include/adaptq/quality.h"
-#include "../../include/adaptq/context.h"
+#include "adaptq/quality.h"
+#include "adaptq/context.h"
+
 #include <cmath>
 #include <vector>
 #include <memory>

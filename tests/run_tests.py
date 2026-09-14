@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, io
+import sys
 # Force UTF-8 output on Windows (avoids CP1252 encoding errors)
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -20,7 +20,6 @@ Usage:
 """
 
 import argparse
-import ctypes
 import math
 import os
 import random
@@ -29,8 +28,10 @@ import sys
 import time
 
 ADAPTQ_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WSL_BUILD   = "/mnt/e/Researches/AdaptQ/adapTQ/build_wsl"
-WSL_LIB     = "/mnt/e/Researches/AdaptQ/adapTQ/build_wsl/libadapTQ_core.a"
+_br = os.path.join(ADAPTQ_DIR, "build_release")
+_bc = os.path.join(ADAPTQ_DIR, "build_clean")
+_b = os.path.join(ADAPTQ_DIR, "build")
+BUILD_DIR = _b if os.path.exists(_b) else (_bc if os.path.exists(_bc) else _br)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Utilities
@@ -52,10 +53,9 @@ def check(cond, label, detail=""):
     print(f"  {status}  {label}{suffix}")
     return cond
 
-def wsl(cmd, capture=True):
-    """Run a command in WSL and return (returncode, stdout+stderr)."""
-    full = f'wsl bash -c "{cmd}"'
-    r = subprocess.run(full, shell=True, capture_output=capture,
+def run_cmd(cmd, capture=True):
+    """Run a native shell command and return (returncode, stdout+stderr)."""
+    r = subprocess.run(cmd, shell=True, capture_output=capture,
                        text=True, timeout=120)
     out = (r.stdout or "") + (r.stderr or "")
     return r.returncode, out
@@ -66,9 +66,11 @@ def wsl(cmd, capture=True):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def stage1_cpp_tests():
-    header("Stage 1 — C++ Test Suite (WSL ctest, 38 tests)")
+    header("Stage 1 — C++ Test Suite (ctest, 38 tests)")
 
-    rc, out = wsl(f"cd {WSL_BUILD} && ctest --output-on-failure -j4 2>&1")
+    cmd = f"cd \"{BUILD_DIR}\" && ctest --output-on-failure -j4 2>&1"
+    # On Windows, 2>&1 in powershell vs cmd. Using shell=True handles this.
+    rc, out = run_cmd(cmd)
     print(out.rstrip())
 
     # Parse results
@@ -80,7 +82,7 @@ def stage1_cpp_tests():
             failed += 1
 
     # Extract summary line
-    total_ok = "100%" in out and "0 tests failed" in out
+    total_ok = "100%" in out and ("0 tests failed" in out or "passed out of" in out)
     ok = check(rc == 0 and total_ok,
                "ctest return code 0 + 100% pass",
                f"{passed} passed, {failed} failed")
@@ -238,7 +240,7 @@ def stage3_benchmark():
     print(f"  {INFO} Pure Python; validates algorithm correctness + measures perf")
 
     # ── MSE vs bits (unit vectors, matching original benchmark.py) ─────────
-    print(f"\n  MSE vs bits  (unit vectors, dim=128, n=300):")
+    print("\n  MSE vs bits  (unit vectors, dim=128, n=300):")
     print(f"  {'bits':>4}  {'avg_MSE':>10}  {'theory':>12}  {'ratio':>7}")
     rng = random.Random(1337)
     q   = PyQuantizer(128, seed=42)
@@ -260,7 +262,7 @@ def stage3_benchmark():
         print(f"  {bits:>4}  {avg:>10.4e}  {th:>12.4e}  {avg/th:>7.2f}")
 
     # ── Throughput ─────────────────────────────────────────────────────────
-    print(f"\n  Throughput benchmark  (dim=128, n=500, bits=4):")
+    print("\n  Throughput benchmark  (dim=128, n=500, bits=4):")
     rng  = random.Random(999)
     q128 = PyQuantizer(128, seed=42)
     vecs = [rand_unit(128, rng) for _ in range(500)]
@@ -280,7 +282,7 @@ def stage3_benchmark():
     print(f"  Packed bytes:   {pb} B  vs FP32: {128*4} B  ({128*4/pb:.1f}×)")
 
     # ── Attention simulation ───────────────────────────────────────────────
-    print(f"\n  Attention simulation  (dim=128, seq=256, bits=4, 20 queries):")
+    print("\n  Attention simulation  (dim=128, seq=256, bits=4, 20 queries):")
     rng   = random.Random(7)
     scale = 1.0 / math.sqrt(128)
     cache = []
@@ -323,16 +325,22 @@ def stage3_benchmark():
 # ═══════════════════════════════════════════════════════════════════════════
 
 def stage4_c_api_integration():
-    header("Stage 4 — C ABI Integration (WSL Python + libadaptq.so)")
-    print(f"  {INFO} Calls the real C++ library via WSL Python subprocess.")
+    header("Stage 4 — C ABI Integration (Native Python + libadaptq)")
+    print(f"  {INFO} Calls the real C++ library via native Python subprocess.")
 
-    # Write a small Python script that loads libadaptq.so via ctypes in WSL
+    # Write a small Python script that loads libadaptq via ctypes
     test_script = r"""
 import ctypes, sys, math, os, struct
+import platform
 
-LIB = "/mnt/e/Researches/AdaptQ/adapTQ/libadaptq.so"
+ADAPTQ_DIR = r"___ADAPTQ_DIR___"
+is_windows = platform.system() == "Windows"
+lib_name = "adaptq.dll" if is_windows else "libadaptq.so"
+LIB_CANDIDATES = [os.path.join(ADAPTQ_DIR, "build", lib_name), os.path.join(ADAPTQ_DIR, "build", "Release", lib_name), os.path.join(ADAPTQ_DIR, "build_clean", lib_name), os.path.join(ADAPTQ_DIR, "build_release", lib_name)]
+LIB = next((p for p in LIB_CANDIDATES if os.path.exists(p)), LIB_CANDIDATES[0])
+
 if not os.path.exists(LIB):
-    print("SKIP: libadaptq.so not found")
+    print("SKIP: " + lib_name + " not found")
     sys.exit(0)
 
 lib = ctypes.CDLL(LIB)
@@ -366,6 +374,11 @@ dim = 128
 h = lib.adaptq_create(dim, 4, 512, 42, 0.0, 0)
 results.append(("create returns non-null", h is not None))
 lib.adaptq_destroy(h)
+
+# Test 1b: create with invalid dim returns null (security)
+h_inv = lib.adaptq_create(-1, 4, 512, 42, 0.0, 0)
+results.append(("create(-1) returns null", h_inv is None))
+
 
 # Test 2: kv_bytes=0 before append
 h = lib.adaptq_create(dim, 4, 512, 42, 0.0, 0)
@@ -445,13 +458,14 @@ print(f"SUMMARY {passed}/{passed+failed}")
 """
 
     tmp = os.path.join(ADAPTQ_DIR, "_ctypes_test.py")
+    test_script_formatted = test_script.replace("___ADAPTQ_DIR___", ADAPTQ_DIR.replace("\\", "\\\\"))
     with open(tmp, "w") as f:
-        f.write(test_script)
+        f.write(test_script_formatted)
 
     try:
-        rc, out = wsl("python3 /mnt/e/Researches/AdaptQ/adapTQ/_ctypes_test.py 2>&1")
+        rc, out = run_cmd(f"{sys.executable} \"{tmp}\"")
     except Exception as e:
-        print(f"  WSL call failed: {e}")
+        print(f"  Command failed: {e}")
         os.unlink(tmp)
         return False
     finally:
@@ -482,8 +496,14 @@ def stage5_cross_validation():
 
     xv_script = r"""
 import ctypes, random, math, os, sys
+import platform
 
-LIB = "/mnt/e/Researches/AdaptQ/adapTQ/libadaptq.so"
+ADAPTQ_DIR = r"___ADAPTQ_DIR___"
+is_windows = platform.system() == "Windows"
+lib_name = "adaptq.dll" if is_windows else "libadaptq.so"
+LIB_CANDIDATES = [os.path.join(ADAPTQ_DIR, "build", lib_name), os.path.join(ADAPTQ_DIR, "build", "Release", lib_name), os.path.join(ADAPTQ_DIR, "build_clean", lib_name), os.path.join(ADAPTQ_DIR, "build_release", lib_name)]
+LIB = next((p for p in LIB_CANDIDATES if os.path.exists(p)), LIB_CANDIDATES[0])
+
 if not os.path.exists(LIB):
     print("SKIP")
     sys.exit(0)
@@ -553,34 +573,22 @@ print(f"XVAL {'PASS' if all_pass else 'FAIL'}")
 """
 
     tmp = os.path.join(ADAPTQ_DIR, "_xval_test.py")
+    xv_script_formatted = xv_script.replace("___ADAPTQ_DIR___", ADAPTQ_DIR.replace("\\", "\\\\"))
     with open(tmp, "w") as f:
-        f.write(xv_script)
+        f.write(xv_script_formatted)
 
     try:
-        rc, out = wsl(f"python3 /mnt/e/Researches/AdaptQ/adapTQ/_xval_test.py 2>&1")
+        rc, out = run_cmd(f"{sys.executable} \"{tmp}\"")
     except Exception as e:
-        print(f"  WSL call failed: {e}")
+        print(f"  Command failed: {e}")
         return False
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
 
     if "SKIP" in out:
-        print(f"  {INFO} libadaptq.so not found — rebuilding shared library in WSL...")
-        # Build a shared lib from the existing object files
-        rc2, out2 = wsl(
-            "cd /mnt/e/Researches/AdaptQ/adapTQ && "
-            "g++ -O3 -mavx2 -mfma -fopenmp -shared -fPIC "
-            "-o libadaptq.so "
-            "build_wsl/CMakeFiles/adapTQ_core.dir/**/*.o "
-            "2>&1"
-        )
-        print(out2.rstrip())
-        if rc2 != 0:
-            print(f"  Could not build shared lib; skipping cross-validation.")
-            return True
-        # Retry
-        rc, out = wsl(f"python3 /mnt/e/Researches/AdaptQ/adapTQ/_xval_test.py 2>&1")
+        print(f"  {INFO} libadaptq not found — skipping cross-validation.")
+        return True
 
     print(out.rstrip())
     all_ok = "XVAL PASS" in out

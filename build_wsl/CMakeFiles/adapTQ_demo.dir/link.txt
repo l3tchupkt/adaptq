@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -fopenmp -Wl,--dependency-file=CMakeFiles/adapTQ_demo.dir/link.d CMakeFiles/adapTQ_demo.dir/main.cpp.o -o adapTQ_demo  libadapTQ_core.a -lm

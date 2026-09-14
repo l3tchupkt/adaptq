@@ -1,4 +1,5 @@
-#include "../../include/adaptq/cost.h"
+#include "adaptq/cost.h"
+
 #include <algorithm>
 #include <cmath>
 #include <vector>

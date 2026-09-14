@@ -161,15 +161,8 @@ private:
     }
 };
 
-/* ---- Backend registry ------------------------------------------------- */
-
-/* select_kernel_backend() is provided by kdot_avx2.cpp when compiled with
- * __AVX2__. Here we provide the scalar fallback for non-AVX2 builds only. */
-#ifndef __AVX2__
-IKernelBackend *select_kernel_backend() {
+IKernelBackend *create_scalar_backend() {
     static ScalarKernelBackend instance;
     return &instance;
 }
-#endif /* !__AVX2__ */
-
-} /* namespace adaptq */
+} /* namespace adaptq */

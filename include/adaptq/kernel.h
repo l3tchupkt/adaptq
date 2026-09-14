@@ -100,4 +100,16 @@ public:
  */
 IKernelBackend *select_kernel_backend();
 
+/**
+ * Returns true if the host CPU supports AVX2 and OS has enabled AVX state management.
+ */
+bool cpu_supports_avx2();
+
+/**
+ * Returns true if scalar fallback was requested via environment variables
+ * (e.g. ADAPTQ_DISABLE_AVX2=1, ADAPTQ_FORCE_SCALAR=1, ADAPTQ_BACKEND=scalar).
+ */
+bool is_scalar_forced();
+
 } /* namespace adaptq */
+

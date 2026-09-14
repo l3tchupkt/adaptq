@@ -1,7 +1,20 @@
-include include/*.h
-include adapters/*.h
-include core/*.h
-include cache/*.h
-include utils/*.h
 include README.md
 include LICENSE
+include CMakeLists.txt
+include pyproject.toml
+include setup.py
+
+recursive-include include *.h *.hpp
+recursive-include adapters *.h *.hpp *.cpp
+recursive-include core *.h *.hpp *.cpp
+recursive-include cache *.h *.hpp *.cpp
+recursive-include utils *.h *.hpp *.cpp
+recursive-include attention *.h *.hpp *.cpp
+recursive-include runtime *.h *.hpp *.cpp
+recursive-include replay *.h *.hpp *.cpp
+recursive-include strategies *.h *.hpp *.cpp
+
+prune build*/
+prune dist/
+prune .pytest_cache/
+prune __pycache__/

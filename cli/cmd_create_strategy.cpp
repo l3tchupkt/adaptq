@@ -258,6 +258,7 @@ TEST_CASE(")" + name + R"( conformance", "[conformance]") {
 /* ========================================================================
  * Entry point called from main CLI
  * ====================================================================== */
+namespace adaptq {
 int cmd_create_strategy(int argc, char **argv) {
     if (argc < 1) {
         std::cerr << "Usage: adaptq create-strategy <StrategyName>\n"
@@ -309,3 +310,5 @@ int cmd_create_strategy(int argc, char **argv) {
 
     return 0;
 }
+
+} /* namespace adaptq */

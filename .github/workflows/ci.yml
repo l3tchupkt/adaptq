@@ -4,7 +4,10 @@ on:
   push:
     branches: [ "main", "dev", "v*" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "v2" ]
+
+permissions:
+  contents: read
 
 # Cancel in-progress runs on new pushes to the same branch
 concurrency:
@@ -13,10 +16,10 @@ concurrency:
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
-  # Job 1: Linux (Ubuntu, GCC, AVX2)
+  # Job 1: Linux Native (GCC)
   # ─────────────────────────────────────────────────────────────────────────
   build-linux:
-    name: Linux (GCC / AVX2)
+    name: Linux (GCC)
     runs-on: ubuntu-latest
 
     steps:
@@ -26,46 +29,42 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build g++ python3 python3-pip
+            cmake ninja-build g++ python3 python3-pip python3-venv
 
-      - name: Configure (Release)
+      - name: Configure CMake (Release)
         run: |
           cmake -B build \
                 -G Ninja \
                 -DCMAKE_BUILD_TYPE=Release \
                 -DADAPTQ_BUILD_TESTS=ON
-        working-directory: adapTQ
 
-      - name: Build
-        run: cmake --build build --parallel
-        working-directory: adapTQ
+      - name: Build CMake
+        run: cmake --build build --config Release --parallel
 
-      - name: CTest (unit + conformance)
-        run: ctest --output-on-failure --parallel 4
-        working-directory: adapTQ/build
+      - name: CTest (Unit, Conformance, Security)
+        run: ctest --build-config Release --output-on-failure --parallel 4
+        working-directory: build
 
-      - name: Build shared library for Python tests
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
         run: |
-          g++ -O3 -mavx2 -mfma -fopenmp -shared -fPIC -Iinclude \
-              -o libadaptq.so \
-              core/fwht.cpp core/codebook.cpp core/quantizer.cpp \
-              core/adaptq_c_api.cpp core/adaptq_backend_vtable.cpp \
-              cache/ring_buffer.cpp attention/attention.cpp utils/timer.cpp \
-              -lm
-        working-directory: adapTQ
+          pip install numpy torch --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install -e .
 
-      - name: Python validation suite
-        run: python3 tests/run_tests.py
-        working-directory: adapTQ
-        env:
-          # Tell run_tests.py it's running natively (not via WSL subprocess)
-          ADAPTQ_NATIVE_LINUX: "1"
+      - name: Python accuracy + API integration
+        run: |
+          python3 tests/test_accuracy.py
+          python3 tests/run_tests.py
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Job 2: Windows (MSVC 2022 / Ninja / AVX2)
+  # Job 2: Windows Native (MSVC)
   # ─────────────────────────────────────────────────────────────────────────
   build-windows:
-    name: Windows (MSVC 2022 / Ninja)
+    name: Windows (MSVC)
     runs-on: windows-latest
 
     steps:
@@ -76,60 +75,71 @@ jobs:
         with:
           arch: x64
 
-      - name: Install Python dependencies
-        run: pip install numpy
-
-      - name: Configure (Release)
-        run: |
-          cmake -B build `
-                -G Ninja `
-                -DCMAKE_BUILD_TYPE=Release `
-                -DCMAKE_CXX_COMPILER=cl `
-                -DADAPTQ_BUILD_TESTS=ON
-        working-directory: adapTQ
-        shell: pwsh
-
-      - name: Build
-        run: cmake --build build --parallel
-        working-directory: adapTQ
-
-      - name: CTest (unit + conformance)
-        run: ctest --output-on-failure --parallel 4
-        working-directory: adapTQ/build
-
-      - name: Build DLL for Python tests
-        run: |
-          cmake --build build --target adapTQ_demo
-        working-directory: adapTQ
-
-      - name: Python reference tests (stages 2+3)
-        # Stages 4+5 require a shared lib; use --stage to run portable stages
-        run: |
-          python tests\run_tests.py --stage 2
-          python tests\run_tests.py --stage 3
-        working-directory: adapTQ
-        shell: pwsh
-
-  # ─────────────────────────────────────────────────────────────────────────
-  # Job 3: Python package (lint + import check)
-  # ─────────────────────────────────────────────────────────────────────────
-  python-package:
-    name: Python package
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install package in editable mode
-        run: pip install -e . --no-build-isolation
-        working-directory: adapTQ
-        continue-on-error: true   # pybind11 extension may not build on CI runner
+      - name: Install Python dependencies
+        run: |
+          pip install numpy torch
+          pip install -e .
 
-      - name: Run pure-Python benchmark (no C extension needed)
-        run: python python/benchmark.py
-        working-directory: adapTQ
+      - name: Configure CMake (Release)
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DADAPTQ_BUILD_TESTS=ON
+        shell: pwsh
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: CTest (Unit, Conformance, Security)
+        run: ctest --build-config Release --output-on-failure --parallel 4
+        working-directory: build
+
+      - name: Python accuracy + API integration
+        run: |
+          python tests\test_accuracy.py
+          python tests\run_tests.py
+        shell: pwsh
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 3: Python package (Build + Validation)
+  # ─────────────────────────────────────────────────────────────────────────
+  python-package:
+    name: Python Package (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package strictly (includes PyBind11 compilation)
+        # We explicitly install PyTorch here for tests/benchmarks since they require it
+        run: |
+          pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install -e .[dev]
+
+      - name: Verify Import
+        run: |
+          python -c "import adaptq; print('Successfully imported:', adaptq.__file__)"
+
+      - name: Run Accuracy Tests
+        run: |
+          python tests/test_accuracy.py
+
+      - name: Pytest Execution (Integration & Unit)
+        # Avoid running tests that require a GPU since GitHub Actions runner is CPU-only
+        run: |
+          pytest tests integration_tests -m "not gpu_required"
+
+      - name: Benchmark (Informational)
+        run: |
+          python python/benchmark.py || true

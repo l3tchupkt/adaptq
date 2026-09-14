@@ -1,0 +1,62 @@
+=== AdapTQ Packaging Validation ===
+Date: Wed Jul 22 09:45:44 PM IST 2026
+
+1. Creating clean virtual environment...
+   Python: Python 3.13.12
+   pip: pip 26.0.1 from /mnt/e/Researches/AdaptQ/adapTQ/test_env/lib/python3.13/site-packages/pip (python 3.13)
+
+2. Installing build dependencies...
+
+3. pip install . (from source)...
+Processing ./.
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: numpy in ./test_env/lib/python3.13/site-packages (from adaptq==0.2.1) (2.5.1)
+Building wheels for collected packages: adaptq
+  Building wheel for adaptq (pyproject.toml): started
+  Building wheel for adaptq (pyproject.toml): finished with status 'done'
+  Created wheel for adaptq: filename=adaptq-0.2.1-cp313-cp313-linux_x86_64.whl size=1744812 sha256=9e40ae348401924472dbb629330ddc5179cb977bc4d219e1d293a52878a6da7e
+  Stored in directory: /tmp/pip-ephem-wheel-cache-2y4a0_ko/wheels/5c/5a/25/98398e918f7d2fb4a7082093495e9ca5177736d7a749cd5030
+Successfully built adaptq
+Installing collected packages: adaptq
+Successfully installed adaptq-0.2.1
+   Exit code: 0
+
+4. pip show adaptq:
+Name: adaptq
+Version: 0.2.1
+Summary: Adaptive Streaming Vector Quantization KV Cache for LLMs — with Replay + Compare + Multi-Backend Integration (V2.1)
+Home-page: https://github.com/l3tchupkt/adaptq
+Author: 
+Author-email: "Lakshmikanthan K (letchupkt)" <letchupkt.dev@gmail.com>
+License: MIT
+Location: /mnt/e/Researches/AdaptQ/adapTQ/test_env/lib/python3.13/site-packages
+Requires: numpy
+Required-by: 
+
+5. Verifying package installation...
+
+  Import check results:
+  [✓] adaptq: OK — version not in module
+  [✓] adaptq.runtime_py: create_adapter, list_available_backends, IRuntimeAdapter OK
+  [✓] adaptq.runtime_py.backends: 6 backends registered
+  [✓] adaptq.runtime_py.metadata: all dataclasses OK
+  [✓] adaptq_py (C ext): OK
+  [✗] create_adapter(transformers): ImportError (need pip install transformers): transformers backend requires: pip install transformers accelerate torch
+
+  PACKAGING: PASS
+
+6. Installed file locations:
+  adaptq          : /mnt/e/Researches/AdaptQ/adapTQ/adaptq/__init__.py
+  adaptq.runtime_py: /mnt/e/Researches/AdaptQ/adapTQ/adaptq/runtime_py/__init__.py
+  backends        : /mnt/e/Researches/AdaptQ/adapTQ/adaptq/runtime_py/backends/__init__.py
+
+7. list_available_backends() in clean env (only base deps):
+  Available: []
+  (Expected: [] in a clean env without transformers/llama-cpp-python installed)
+
+=== Phase 2: PACKAGING VALIDATION COMPLETE ===

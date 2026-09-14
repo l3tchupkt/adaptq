@@ -1,0 +1,326 @@
+{
+  "summary": {
+    "passed": 41,
+    "failed": 0,
+    "skipped": 3
+  },
+  "results": [
+    {
+      "phase": "phase5",
+      "status": "PASS",
+      "label": "snapshot_demo.py",
+      "detail": "4.9s"
+    },
+    {
+      "phase": "phase5",
+      "status": "PASS",
+      "label": "branch_replay_demo.py",
+      "detail": "4.9s"
+    },
+    {
+      "phase": "phase5",
+      "status": "PASS",
+      "label": "compare_backends.py",
+      "detail": "15.1s"
+    },
+    {
+      "phase": "phase5",
+      "status": "PASS",
+      "label": "transformers_demo.py",
+      "detail": "30.2s"
+    },
+    {
+      "phase": "phase5",
+      "status": "SKIP",
+      "label": "ollama_demo.py",
+      "detail": "Ollama server not running"
+    },
+    {
+      "phase": "phase5",
+      "status": "SKIP",
+      "label": "llama_demo.py",
+      "detail": "No GGUF model available (expected)"
+    },
+    {
+      "phase": "phase6",
+      "status": "PASS",
+      "label": "create_adapter('transformers')",
+      "detail": ""
+    },
+    {
+      "phase": "phase6",
+      "status": "PASS",
+      "label": "load_model(Qwen/Qwen2-0.5B)",
+      "detail": "4.8s"
+    },
+    {
+      "phase": "phase6",
+      "status": "PASS",
+      "label": "metadata()",
+      "detail": "layers=24 heads=14 dim=64"
+    },
+    {
+      "phase": "phase6",
+      "status": "PASS",
+      "label": "tokenize()",
+      "detail": "5 tokens"
+    },
+    {
+      "phase": "phase6",
+      "status": "PASS",
+      "label": "begin_session(bits=4)",
+      "detail": ""
+    },
+    {
+      "phase": "phase6",
+      "status": "PASS",
+      "label": "prefill()",
+      "detail": "0.225s"
+    },
+    {
+      "phase": "phase6",
+      "status": "PASS",
+      "label": "decode_next() x5",
+      "detail": "generated 5 tokens"
+    },
+    {
+      "phase": "phase6",
+      "status": "PASS",
+      "label": "get_kv_stats()",
+      "detail": "adaptq=1152B fp16=110592B ratio=96.0x"
+    },
+    {
+      "phase": "phase6",
+      "status": "PASS",
+      "label": "end_session()",
+      "detail": ""
+    },
+    {
+      "phase": "phase6",
+      "status": "PASS",
+      "label": "generate(30 tokens)",
+      "detail": "7.0 tok/s"
+    },
+    {
+      "phase": "phase7",
+      "status": "PASS",
+      "label": "prefill 50 tokens x 4 heads",
+      "detail": "kv_bytes=12800"
+    },
+    {
+      "phase": "phase7",
+      "status": "PASS",
+      "label": "compute() head 0 before snapshot",
+      "detail": "norm=1.4981"
+    },
+    {
+      "phase": "phase7",
+      "status": "PASS",
+      "label": "CLI binary found",
+      "detail": "/mnt/e/Researches/AdaptQ/adapTQ/build_release/adapTQ_demo"
+    },
+    {
+      "phase": "phase7",
+      "status": "PASS",
+      "label": "CLI --help shows replay subcommand",
+      "detail": ""
+    },
+    {
+      "phase": "phase7",
+      "status": "PASS",
+      "label": "CLI demo mode runs",
+      "detail": "returncode=0"
+    },
+    {
+      "phase": "phase7",
+      "status": "PASS",
+      "label": "ReplayEngine() created",
+      "detail": ""
+    },
+    {
+      "phase": "phase7",
+      "status": "PASS",
+      "label": "replay() raises RuntimeError on missing file",
+      "detail": "adaptq replay failed:\nERROR: SessionSnapshot::load: cannot o"
+    },
+    {
+      "phase": "phase7",
+      "status": "PASS",
+      "label": "compare() raises RuntimeError on missing file",
+      "detail": "adaptq compare failed:\nERROR: SessionSnapshot::load: cannot "
+    },
+    {
+      "phase": "phase7",
+      "status": "PASS",
+      "label": "reset() \u2192 kv_bytes=0",
+      "detail": ""
+    },
+    {
+      "phase": "phase7",
+      "status": "PASS",
+      "label": "compute_batch(head=0, queries[5,64])",
+      "detail": "shape=(5, 64)"
+    },
+    {
+      "phase": "phase8",
+      "status": "PASS",
+      "label": "list_available_backends()",
+      "detail": "['transformers', 'llama_cpp_python', 'ollama']"
+    },
+    {
+      "phase": "phase8",
+      "status": "PASS",
+      "label": "vllm raises correct error",
+      "detail": "RuntimeError"
+    },
+    {
+      "phase": "phase8",
+      "status": "PASS",
+      "label": "mlx raises correct error",
+      "detail": "RuntimeError"
+    },
+    {
+      "phase": "phase8",
+      "status": "PASS",
+      "label": "llama_cpp raises correct error",
+      "detail": "NotImplementedError"
+    },
+    {
+      "phase": "phase8",
+      "status": "SKIP",
+      "label": "ollama",
+      "detail": "Server running unexpectedly"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "bits=4: 100 tokens x 2 heads append",
+      "detail": "kv_bytes=12800"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "bits=4: compute(head=0)",
+      "detail": "shape=(64,)"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "bits=4: reset() \u2192 kv_bytes=0",
+      "detail": "True"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "bits=3: 100 tokens x 2 heads append",
+      "detail": "kv_bytes=9600"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "bits=3: compute(head=0)",
+      "detail": "shape=(64,)"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "bits=3: reset() \u2192 kv_bytes=0",
+      "detail": "True"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "bits=2: 100 tokens x 2 heads append",
+      "detail": "kv_bytes=6400"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "bits=2: compute(head=0)",
+      "detail": "shape=(64,)"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "bits=2: reset() \u2192 kv_bytes=0",
+      "detail": "True"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "CLI 'replay' subcommand recognized",
+      "detail": "correct error on missing file"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "CLI 'compare' subcommand recognized",
+      "detail": "correct error on missing file"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "CLI 'create-strategy' subcommand recognized",
+      "detail": "correct error on missing file"
+    },
+    {
+      "phase": "phase9",
+      "status": "PASS",
+      "label": "Snapshot kv_bytes is deterministic (5 trials)",
+      "detail": "always 8192 bytes"
+    }
+  ],
+  "runtime": {
+    "phases": {},
+    "runtime": {
+      "backend": "transformers",
+      "model": "Qwen/Qwen2-0.5B",
+      "tok_per_sec": 7.032084648493624,
+      "kv_ratio": 96.0
+    },
+    "long_context": [
+      {
+        "n_tokens": 128,
+        "kv_bytes": 16384,
+        "fp16_bytes": 65536,
+        "ratio": 4.0,
+        "cos": 0.9999999403953552
+      },
+      {
+        "n_tokens": 256,
+        "kv_bytes": 32768,
+        "fp16_bytes": 131072,
+        "ratio": 4.0,
+        "cos": 1.0
+      },
+      {
+        "n_tokens": 512,
+        "kv_bytes": 65536,
+        "fp16_bytes": 262144,
+        "ratio": 4.0,
+        "cos": 1.0
+      },
+      {
+        "n_tokens": 1024,
+        "kv_bytes": 131072,
+        "fp16_bytes": 524288,
+        "ratio": 4.0,
+        "cos": 0.9504595398902893
+      },
+      {
+        "n_tokens": 2048,
+        "kv_bytes": 262144,
+        "fp16_bytes": 1048576,
+        "ratio": 4.0,
+        "cos": 0.9517253637313843
+      },
+      {
+        "n_tokens": 4096,
+        "kv_bytes": 524288,
+        "fp16_bytes": 2097152,
+        "ratio": 4.0,
+        "cos": 0.9503975510597229
+      }
+    ]
+  }
+}

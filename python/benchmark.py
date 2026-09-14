@@ -7,7 +7,6 @@ Pure Python; no external dependencies.
 import math
 import random
 import time
-import sys
 
 # --------------------------------------------------------------------------
 # Reference implementation (copied from demo.py for standalone use)

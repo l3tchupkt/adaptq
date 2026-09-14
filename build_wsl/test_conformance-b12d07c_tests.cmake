@@ -1,5 +1,0 @@
-add_test( [==[FPPassthroughStrategy conformance]==] /mnt/e/Researches/AdaptQ/adapTQ/build_wsl/test_conformance [==[FPPassthroughStrategy conformance]==]  )
-set_tests_properties( [==[FPPassthroughStrategy conformance]==] PROPERTIES WORKING_DIRECTORY /mnt/e/Researches/AdaptQ/adapTQ/build_wsl SKIP_RETURN_CODE 4)
-add_test( [==[HARFixedStrategy conformance]==] /mnt/e/Researches/AdaptQ/adapTQ/build_wsl/test_conformance [==[HARFixedStrategy conformance]==]  )
-set_tests_properties( [==[HARFixedStrategy conformance]==] PROPERTIES WORKING_DIRECTORY /mnt/e/Researches/AdaptQ/adapTQ/build_wsl SKIP_RETURN_CODE 4)
-set( test_conformance_TESTS [==[FPPassthroughStrategy conformance]==] [==[HARFixedStrategy conformance]==])

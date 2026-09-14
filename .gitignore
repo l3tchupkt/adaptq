@@ -1,10 +1,44 @@
+# ---------------------------------------------------------------------------
+# C++ Build Artifacts
+# ---------------------------------------------------------------------------
+build*/
+out*/
 *.o
+*.obj
 *.so
+*.dll
+*.dylib
+*.a
+*.lib
+*.exp
+*.pdb
+*.exe
 adapTQ_demo
-standalone_test
-adaptq_realtime_bench.png
+
+# ---------------------------------------------------------------------------
+# Python Artifacts & Caches
+# ---------------------------------------------------------------------------
 __pycache__/
-*.so
-adapters/*.so
-adapters/standalone_test
-build_py.sh
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+test_env/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+
+# ---------------------------------------------------------------------------
+# IDEs and OS Files
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+*~

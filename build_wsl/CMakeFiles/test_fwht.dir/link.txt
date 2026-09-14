@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/test_fwht.dir/link.d CMakeFiles/test_fwht.dir/tests/unit/test_fwht.cpp.o CMakeFiles/test_fwht.dir/core/fwht.cpp.o -o test_fwht  _deps/catch2-build/src/libCatch2Main.a _deps/catch2-build/src/libCatch2.a

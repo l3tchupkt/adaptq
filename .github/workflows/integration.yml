@@ -1,0 +1,107 @@
+name: AdapTQ V2.1 Integration Tests
+
+on:
+  push:
+    branches: [main, v2.1, v2]
+  pull_request:
+    branches: [main, v2]
+
+jobs:
+  # ── Unit, Conformance & Security tests (C++) ─────────────────────────────────────
+  cpp-tests:
+    name: C++ Unit & Security Tests (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: sudo apt-get install -y cmake ninja-build libgomp1
+
+      - name: Configure
+        run: cmake -B build_v2 -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build_v2 --parallel 4
+
+      - name: Run unit, conformance, and security tests
+        run: cd build_v2 && ctest --output-on-failure -j4
+
+  # ── Python adapter contract tests (no model needed) ────────────────────
+  adapter-contract:
+    name: Adapter Contract Tests (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install AdapTQ + backends
+        run: |
+          pip install -e .
+          pip install transformers accelerate torch --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install llama-cpp-python requests pytest
+
+      - name: Run adapter contract tests
+        run: pytest integration_tests/test_adapter_contract.py -v
+
+  # ── Transformers integration (downloads Qwen2-0.5B ~1GB) ──────────────
+  transformers-integration:
+    name: Transformers Integration Tests
+    runs-on: ubuntu-latest
+    # Only run on push to main (model download is slow)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          pip install -e .
+          pip install transformers accelerate torch --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install pytest huggingface-hub
+
+      - name: Run transformers integration tests
+        env:
+          HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
+          TRANSFORMERS_OFFLINE: "0"
+        run: |
+          pytest integration_tests/test_transformers.py -v \
+            --model-hf Qwen/Qwen2-0.5B \
+            -x --timeout=300
+
+  # ── Python validation suite (existing V1+V2 tests) ────────────────────
+  python-validation:
+    name: Python Validation Suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build deps
+        run: sudo apt-get install -y cmake ninja-build libgomp1
+
+      - name: Build C++ for Python tests
+        run: |
+          cmake -B build_v2 -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build_v2 --parallel 4
+
+      - name: Install AdapTQ
+        run: |
+          pip install -e .
+          pip install numpy torch pytest
+
+      - name: Run Python validation suite
+        run: |
+          python tests/run_tests.py --stage 2
+          pytest tests/test_replay_api.py -v

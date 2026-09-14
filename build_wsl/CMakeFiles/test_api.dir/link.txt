@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -fopenmp -Wl,--dependency-file=CMakeFiles/test_api.dir/link.d CMakeFiles/test_api.dir/tests/unit/test_api.cpp.o -o test_api  libadapTQ_core.a _deps/catch2-build/src/libCatch2Main.a -lm _deps/catch2-build/src/libCatch2.a

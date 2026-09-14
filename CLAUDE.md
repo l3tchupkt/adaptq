@@ -219,10 +219,52 @@ Effect:
 ## Build
 
 ```bash
-cd /mnt/e/Researches/AdaptQ/adapTQ
-make clean && make
-./adapTQ_demo
+# V2.1 build (Linux / WSL / Windows with MSVC)
+cmake -B build_release -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build_release --parallel 4
+
+# Run all tests (67 total)
+cd build_release && ctest --output-on-failure -j4
+
+# Run the CLI demo
+./build_release/adapTQ_demo --help
+./build_release/adapTQ_demo replay session.aqss --metrics
+./build_release/adapTQ_demo compare session.aqss --strategies har_fixed,fp_passthrough
 ```
+
+---
+
+## V2 Architecture (added 2026-07-22)
+
+```
+adapTQ/
+├── runtime/
+│   ├── runtime_context.h     — RuntimeContext: orchestration + token log
+│   └── runtime_context.cpp   — init/reset/append/compute; strategy registry
+├── replay/
+│   ├── session_snapshot.h    — SessionSnapshot: binary AQSS format
+│   ├── session_snapshot.cpp  — capture/save/load
+│   ├── replay_engine.h       — ReplayEngine: replay/branch/replay_with
+│   └── replay_engine.cpp
+├── cli/
+│   ├── cmd_replay.cpp        — adaptq replay subcommand
+│   ├── cmd_compare.cpp       — adaptq compare subcommand
+│   └── cmd_create_strategy.cpp — adaptq create-strategy subcommand
+├── tests/unit/
+│   ├── test_runtime_context.cpp   — 10 V2 tests
+│   ├── test_session_snapshot.cpp  — 9 V2 tests (with unique_ptr helper)
+│   └── test_replay_engine.cpp     — 10 V2 tests
+└── adaptq/
+    └── replay.py             — Python: ReplayEngine, CompareResult, snapshot_info
+```
+
+### Key Invariants
+
+1. **RuntimeContext is non-copyable** — always use `std::unique_ptr<RuntimeContext>` or pass by ref/pointer.
+2. **Token log required for replay** — set `cfg.log_tokens = true` before inference if you want replay capability.
+3. **`cache_size` in SessionSnapshot = number of K/V PAIRS** — `ContiguousSlabStorage::size()` returns total slots (K+V), divide by 2 for pairs.
+4. **`make_contiguous()` is in `adaptq::` namespace** — when linking against `adapTQ_runtime`, use `adaptq::make_contiguous()`.
+5. **`cmd_create_strategy` is in `adaptq::` namespace** — declared as `adaptq::cmd_create_strategy` in `main.cpp`.
 
 ---
 
@@ -233,3 +275,4 @@ make clean && make
 * Residual quantization (QJL)
 * ARM NEON / RISC-V SIMD
 * ONNX / TensorRT export
+* HARAdaptive, H2O, Streaming, adaptive allocators (V3+)

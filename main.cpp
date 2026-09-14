@@ -412,7 +412,38 @@ static void summary_report(int d) {
   printf("=================================================================\n");
 }
 
-int main() {
+/* ---- V2 subcommand declarations --------------------------------------- */
+namespace adaptq {
+int cmd_replay        (int argc, char **argv);
+int cmd_compare       (int argc, char **argv);
+int cmd_create_strategy(int argc, char **argv);
+} /* namespace adaptq */
+
+int main(int argc, char **argv) {
+  /* Dispatch subcommands if called as: adaptq <subcommand> [args…] */
+  if (argc >= 2) {
+    const char *sub = argv[1];
+    if (strcmp(sub, "replay") == 0)
+      return adaptq::cmd_replay(argc - 2, argv + 2);
+    if (strcmp(sub, "compare") == 0)
+      return adaptq::cmd_compare(argc - 2, argv + 2);
+    if (strcmp(sub, "create-strategy") == 0)
+      return adaptq::cmd_create_strategy(argc - 2, argv + 2);
+    if (strcmp(sub, "--help") == 0 || strcmp(sub, "-h") == 0) {
+      printf("Usage: adaptq <subcommand> [options]\n"
+             "Subcommands:\n"
+             "  replay          Replay a session snapshot\n"
+             "  compare         Compare strategies on a session snapshot\n"
+             "  create-strategy Scaffold a new IKVStrategy implementation\n"
+             "  (no args)       Run the full performance demo\n");
+      return 0;
+    }
+    printf("Unknown subcommand '%s'. Run 'adaptq --help' for usage.\n", sub);
+    return 1;
+  }
+
+  /* No subcommand — run the legacy demo. */
+
   printf("============================================================\n");
   printf("  AdapTQ  — Full Performance Report\n");
   printf("============================================================\n");

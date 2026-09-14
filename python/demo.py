@@ -5,12 +5,9 @@ Also provides a pure-Python reference implementation for validation.
 """
 
 import subprocess
-import sys
 import os
 import math
 import random
-import struct
-import time
 
 # --------------------------------------------------------------------------
 # Pure-Python reference: FWHT

@@ -1,11 +1,12 @@
-#include "../../include/adaptq/strategy.h"
-#include "../../include/adaptq/context.h"
-#include "../../include/adaptq/storage.h"
-#include "../../include/adaptq/config.h"
+#include <adaptq/strategy.h>
+#include <adaptq/context.h>
+#include <adaptq/storage.h>
+#include <adaptq/config.h>
 #include <cstring>
 #include <memory>
 #include <ostream>
 #include <istream>
+
 
 /* -------------------------------------------------------------------------
  * strategies/fp_passthrough.cpp — FPPassthroughStrategy : IKVStrategy

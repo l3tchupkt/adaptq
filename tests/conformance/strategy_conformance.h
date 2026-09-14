@@ -60,7 +60,7 @@ void run_conformance(const char *strategy_name) {
 
     SECTION(std::string(strategy_name) + ": lifecycle") {
         ContiguousSlabStorage st;
-        st.init(256, 128);
+        st.init(256, 128 * (int)sizeof(float));  /* dim * sizeof(float) for FP32 passthrough */
         StratT s;
         s.init(make_cfg());
         REQUIRE_NOTHROW(s.reset());
@@ -68,7 +68,7 @@ void run_conformance(const char *strategy_name) {
 
     SECTION(std::string(strategy_name) + ": required capabilities non-null") {
         ContiguousSlabStorage st;
-        st.init(256, 128);
+        st.init(256, 128 * (int)sizeof(float));
         StratT s;
         s.init(make_cfg());
         REQUIRE(s.compression() != nullptr);
@@ -84,7 +84,7 @@ void run_conformance(const char *strategy_name) {
 
     SECTION(std::string(strategy_name) + ": compress() writes to storage") {
         ContiguousSlabStorage st;
-        st.init(256, 128);
+        st.init(256, 128 * (int)sizeof(float));  /* large enough for FP32 */
         StratT s;
         s.init(make_cfg());
         ExecutionContext ctx = make_ctx(&st);
@@ -100,7 +100,7 @@ void run_conformance(const char *strategy_name) {
 
     SECTION(std::string(strategy_name) + ": decompress() produces non-zero output") {
         ContiguousSlabStorage st;
-        st.init(256, 128);
+        st.init(256, 128 * (int)sizeof(float));
         StratT s;
         s.init(make_cfg());
         ExecutionContext ctx = make_ctx(&st);
@@ -118,7 +118,7 @@ void run_conformance(const char *strategy_name) {
 
     SECTION(std::string(strategy_name) + ": on_append() at capacity evicts") {
         ContiguousSlabStorage st;
-        st.init(4, 128);
+        st.init(4, 128 * (int)sizeof(float));
         StratT s;
         s.init(make_cfg(128, 4, 4));
         ExecutionContext ctx = make_ctx(&st, 128, 4);
@@ -135,7 +135,7 @@ void run_conformance(const char *strategy_name) {
 
     SECTION(std::string(strategy_name) + ": on_attention() does not crash") {
         ContiguousSlabStorage st;
-        st.init(256, 128);
+        st.init(256, 128 * (int)sizeof(float));
         StratT s;
         s.init(make_cfg());
         ExecutionContext ctx = make_ctx(&st);

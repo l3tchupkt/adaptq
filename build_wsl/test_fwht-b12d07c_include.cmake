@@ -1,5 +1,0 @@
-if(EXISTS "/mnt/e/Researches/AdaptQ/adapTQ/build_wsl/test_fwht-b12d07c_tests.cmake")
-  include("/mnt/e/Researches/AdaptQ/adapTQ/build_wsl/test_fwht-b12d07c_tests.cmake")
-else()
-  add_test(test_fwht_NOT_BUILT-b12d07c test_fwht_NOT_BUILT-b12d07c)
-endif()
