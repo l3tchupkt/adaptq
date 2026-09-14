@@ -542,7 +542,7 @@ int AttentionHead::compute(const float *q, float *out) const {
   int cb_sz = 1 << bits;
   for (int i = 0; i < n; ++i) {
     int s = slots[i];
-    float ecb[8];
+    float ecb[16];
     float ew = logits[i] * kv_buf.v_scale[s] * isp;
     for (int k = 0; k < cb_sz; ++k)
       ecb[k] = ew * cb[k];
