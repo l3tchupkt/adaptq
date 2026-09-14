@@ -121,6 +121,18 @@ TEST_CASE("SegmentedSlabStorage: reset clears all slabs", "[storage][segmented]"
     REQUIRE(st.bytes_used() == 0);
 }
 
+TEST_CASE("SegmentedSlabStorage: free_slot tracks actual data bytes", "[storage][segmented]") {
+    SegmentedSlabStorage st;
+    st.init(4, 8);
+    auto full = make_data(8, 0xAA);
+    auto partial = make_data(4, 0xBB);
+    st.write(full.data(), 8, 1.f, 0x04);
+    StorageSlot slot = st.write(partial.data(), 4, 2.f, 0x04);
+    REQUIRE(st.bytes_used() == 12);
+    st.free_slot(slot);
+    REQUIRE(st.bytes_used() == 8);
+}
+
 /* ======================================================================
  * IStorageBackend contract template
  * ==================================================================== */

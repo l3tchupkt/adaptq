@@ -42,6 +42,7 @@ public:
     void reset() override {
         for (int i = 0; i < n_slabs_; ++i) {
             slabs_[i].size = slabs_[i].head = slabs_[i].next_slot = 0;
+            slabs_[i].data_sizes.assign(capacity_, 0);
         }
         total_used_ = 0;
     }
@@ -53,13 +54,14 @@ public:
         assert(sl);
         int local;
         if (sl->size < capacity_) { local = sl->next_slot++; sl->size++; }
-        else { local = sl->head; sl->head = (sl->head + 1) % capacity_; total_used_ -= sl->slot_bytes; }
+        else { local = sl->head; sl->head = (sl->head + 1) % capacity_; total_used_ -= sl->data_sizes[local]; }
         uint8_t *dst = sl->data + (size_t)local * sl->slot_bytes;
         memcpy(dst, data, data_bytes);
         if (data_bytes < sl->slot_bytes)
             memset(dst + data_bytes, 0, sl->slot_bytes - data_bytes);
         sl->scales[local]     = scale;
         sl->tags[local]       = format_tag;
+        sl->data_sizes[local] = data_bytes;
         total_used_          += data_bytes;
         return (StorageSlot)(sl->id * SS_ENCODE + local);
     }
@@ -77,8 +79,10 @@ public:
 
     void free_slot(StorageSlot slot) override {
         int slab_id = (int)(slot / SS_ENCODE);
+        int local   = (int)(slot % SS_ENCODE);
         if (slab_id >= n_slabs_) return;
-        total_used_ -= slabs_[slab_id].slot_bytes;
+        total_used_ -= slabs_[slab_id].data_sizes[local];
+        slabs_[slab_id].data_sizes[local] = 0;
     }
 
     size_t bytes_used()     const override { return (size_t)total_used_; }
@@ -95,6 +99,7 @@ private:
         uint8_t             *data       = nullptr;
         std::vector<float>   scales;
         std::vector<uint8_t> tags;
+        std::vector<int>      data_sizes;
         int                  id         = 0;
         int                  slot_bytes = 0;
         int                  size       = 0;
@@ -123,6 +128,7 @@ private:
         memset(sl.data, 0, total);
         sl.scales.assign(capacity_, 0.f);
         sl.tags.assign(capacity_, format_tag);
+        sl.data_sizes.assign(capacity_, 0);
         return &sl;
     }
 
