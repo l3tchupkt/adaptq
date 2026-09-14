@@ -306,6 +306,8 @@ static void vaccum_scalar(float *acc, const uint8_t *vp, const float *ecb,
 }
 
 // ---------------------------------------------------------------------------
+#include "../include/adaptq/runtime.h"
+
 void AttentionHead::init(int d, int b, int cap, uint64_t seed, float v_mass,
                          int hyb) {
   dim = d;
@@ -314,7 +316,12 @@ void AttentionHead::init(int d, int b, int cap, uint64_t seed, float v_mass,
   hybrid_thresh = hyb;
   quant.init(d, seed);
   padded = quant.padded;
-  kv_buf.init(cap, padded, b);
+  
+  // Initialize the new abstractions with 0.2.2 default implementations
+  policy = RuntimeFactory::create_default_policy(b);
+  storage = RuntimeFactory::create_contiguous_storage(cap, padded, b);
+  kernel = RuntimeFactory::create_auto_kernel();
+
   if (hyb > 0)
     raw_kv.reserve((size_t)hyb * 2 * d);
 }
@@ -322,7 +329,7 @@ void AttentionHead::append_kv(const float *key, const float *val, int pos) {
   static thread_local uint8_t tmp_k[8192], tmp_v[8192];
   float ks = quant.quantize_into(key, bits, tmp_k);
   float vs = quant.quantize_into(val, bits, tmp_v);
-  kv_buf.insert(tmp_k, ks, tmp_v, vs, pos);
+  storage->insert(tmp_k, ks, tmp_v, vs, pos);
   // Mirror raw floats for hybrid FP path (only up to threshold)
   if (hybrid_thresh > 0 && (int)raw_kv.size() < hybrid_thresh * 2 * dim) {
     raw_kv.insert(raw_kv.end(), key, key + dim);
@@ -443,7 +450,9 @@ static void compute_avx2(const float *qr, float *acc, const float *cb,
 #endif
 
 int AttentionHead::compute(const float *q, float *out) const {
-  const int n = kv_buf.size, cap = kv_buf.capacity, pb = kv_buf.packed_bytes;
+  const int n = storage->size();
+  const int cap = storage->capacity();
+  const int pb = storage->packed_bytes();
   if (!n) {
     memset(out, 0, dim * sizeof(float));
     return 0;
@@ -511,71 +520,14 @@ int AttentionHead::compute(const float *q, float *out) const {
 
   const float *cb = get_codebook(bits);
   float *acc = tl_ws.v_accum.data();
-  const uint8_t *kb = kv_buf.k_data;
-  const uint8_t *vb = kv_buf.v_data;
-  float attn_s = 1.f / (sqrtf((float)dim) * (float)padded);
-  float isp = 1.f / sqrtf((float)padded);
+  const uint8_t *kb = storage->k_data_ptr();
+  const uint8_t *vb = storage->v_data_ptr();
   float *logits = tl_ws.logits.data();
   int *slots = tl_ws.slots.data();
   for (int i = 0; i < n; ++i)
-    slots[i] = (kv_buf.head - n + cap + i) % cap;
+    slots[i] = (storage->head() - n + cap + i) % cap;
 
-
-
-  // inside compute():
-#if ADAPTQ_HAS_AVX2
-  bool use_avx2 = true;
-#if defined(__GNUC__) || defined(__clang__)
-  use_avx2 = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
-#endif
-  if (use_avx2) {
-  if (bits == 4) {
-    compute_avx2<4>(qr, acc, cb, kb, vb, kv_buf.k_scale.data(),
-                    kv_buf.v_scale.data(), attn_s, isp, slots, n, pb, padded,
-                    v_mass_thresh, logits);
-    fwht_inverse(acc, quant.D.data(), padded);
-    memcpy(out, acc, dim * sizeof(float));
-    return n;
-  } else if (bits == 3) {
-    compute_avx2<3>(qr, acc, cb, kb, vb, kv_buf.k_scale.data(),
-                    kv_buf.v_scale.data(), attn_s, isp, slots, n, pb, padded,
-                    v_mass_thresh, logits);
-    fwht_inverse(acc, quant.D.data(), padded);
-    memcpy(out, acc, dim * sizeof(float));
-    return n;
-  } else if (bits == 2) {
-    compute_avx2<2>(qr, acc, cb, kb, vb, kv_buf.k_scale.data(),
-                    kv_buf.v_scale.data(), attn_s, isp, slots, n, pb, padded,
-                    v_mass_thresh, logits);
-    fwht_inverse(acc, quant.D.data(), padded);
-    memcpy(out, acc, dim * sizeof(float));
-    return n;
-  }
-  }
-#endif
-
-  // Scalar 2/3-bit path
-  memset(acc, 0, padded * sizeof(float));
-  for (int i = 0; i < n; ++i) {
-    int s = slots[i];
-    if (i + 4 < n) {
-      int ps = slots[i + 4];
-      ADAPTQ_PREFETCH(kb + (size_t)ps * pb);
-      ADAPTQ_PREFETCH(vb + (size_t)ps * pb);
-    }
-    logits[i] = kdot_scalar(qr, kb + (size_t)s * pb, cb, pb, bits) * attn_s *
-                kv_buf.k_scale[s];
-  }
-  softmax(logits, n);
-  int cb_sz = 1 << bits;
-  for (int i = 0; i < n; ++i) {
-    int s = slots[i];
-    float ecb[16];
-    float ew = logits[i] * kv_buf.v_scale[s] * isp;
-    for (int k = 0; k < cb_sz; ++k)
-      ecb[k] = ew * cb[k];
-    vaccum_scalar(acc, vb + (size_t)s * pb, ecb, pb, bits);
-  }
+  kernel->compute_attention(qr, acc, cb, kb, vb, storage->k_scale_ptr(), storage->v_scale_ptr(), bits, dim, padded, pb, n, slots, v_mass_thresh, logits);
   fwht_inverse(acc, quant.D.data(), padded);
   memcpy(out, acc, dim * sizeof(float));
   return n;
@@ -583,7 +535,7 @@ int AttentionHead::compute(const float *q, float *out) const {
 
 int AttentionHead::compute_batch(const float *queries, int num_queries,
                                  float *outs) const {
-  if (kv_buf.size == 0) {
+  if (!storage || storage->size() == 0) {
     memset(outs, 0, num_queries * dim * sizeof(float));
     return 0;
   }
@@ -595,5 +547,90 @@ int AttentionHead::compute_batch(const float *queries, int num_queries,
     compute(queries + q * dim, outs + q * dim);
   }
 
-  return kv_buf.size;
+  return storage->size();
 }
+
+// ---------------------------------------------------------------------------
+// 0.2.3 Kernel Abstraction Adapters
+// ---------------------------------------------------------------------------
+struct ScalarKernelBackend : public IKernelBackend {
+    void compute_attention(
+        const float* q_rot, float* v_accum, const float* codebook,
+        const uint8_t* kb, const uint8_t* vb,
+        const float* k_scale, const float* v_scale,
+        int bits, int dim, int padded, int pb,
+        int n, const int* slots,
+        float v_mass_thresh, float* logits
+    ) const override {
+        float attn_s = 1.f / (sqrtf((float)dim) * sqrtf((float)padded));
+        float isp = 1.f / sqrtf((float)padded);
+        
+        memset(v_accum, 0, padded * sizeof(float));
+        for (int i = 0; i < n; ++i) {
+            int s = slots[i];
+            if (i + 4 < n) {
+                int ps = slots[i + 4];
+                // Portable prefetch (if available in this TU, or just ignore since it's the backend)
+                // ADAPTQ_PREFETCH is defined at the top of attention.cpp
+                ADAPTQ_PREFETCH(kb + (size_t)ps * pb);
+                ADAPTQ_PREFETCH(vb + (size_t)ps * pb);
+            }
+            logits[i] = kdot_scalar(q_rot, kb + (size_t)s * pb, codebook, pb, bits) * attn_s * k_scale[s];
+        }
+        softmax(logits, n);
+        int cb_sz = 1 << bits;
+        for (int i = 0; i < n; ++i) {
+            int s = slots[i];
+            float ecb[16];
+            float ew = logits[i] * v_scale[s] * isp;
+            for (int k = 0; k < cb_sz; ++k)
+                ecb[k] = ew * codebook[k];
+            vaccum_scalar(v_accum, vb + (size_t)s * pb, ecb, pb, bits);
+        }
+    }
+};
+
+struct AVX2KernelBackend : public IKernelBackend {
+    void compute_attention(
+        const float* q_rot, float* v_accum, const float* codebook,
+        const uint8_t* kb, const uint8_t* vb,
+        const float* k_scale, const float* v_scale,
+        int bits, int dim, int padded, int pb,
+        int n, const int* slots,
+        float v_mass_thresh, float* logits
+    ) const override {
+#if ADAPTQ_HAS_AVX2
+        float attn_s = 1.f / (sqrtf((float)dim) * sqrtf((float)padded));
+        float isp = 1.f / sqrtf((float)padded);
+        if (bits == 4) {
+            compute_avx2<4>(q_rot, v_accum, codebook, kb, vb, k_scale, v_scale, attn_s, isp, (int*)slots, n, pb, padded, v_mass_thresh, logits);
+        } else if (bits == 3) {
+            compute_avx2<3>(q_rot, v_accum, codebook, kb, vb, k_scale, v_scale, attn_s, isp, (int*)slots, n, pb, padded, v_mass_thresh, logits);
+        } else if (bits == 2) {
+            compute_avx2<2>(q_rot, v_accum, codebook, kb, vb, k_scale, v_scale, attn_s, isp, (int*)slots, n, pb, padded, v_mass_thresh, logits);
+        }
+#else
+        // Should never be called if AVX2 is not supported, but fallback just in case
+        ScalarKernelBackend().compute_attention(q_rot, v_accum, codebook, kb, vb, k_scale, v_scale, bits, dim, padded, pb, n, slots, v_mass_thresh, logits);
+#endif
+    }
+};
+
+std::unique_ptr<IKernelBackend> create_auto_kernel() {
+#if ADAPTQ_HAS_AVX2
+    bool use_avx2 = true;
+#if defined(__GNUC__) || defined(__clang__)
+    use_avx2 = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+#endif
+    if (use_avx2) {
+        return std::make_unique<AVX2KernelBackend>();
+    }
+#endif
+    return std::make_unique<ScalarKernelBackend>();
+}
+
+std::unique_ptr<IKernelBackend> RuntimeFactory::create_auto_kernel() {
+    return ::create_auto_kernel();
+}
+
+
