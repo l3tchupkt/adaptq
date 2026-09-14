@@ -2,13 +2,18 @@
 #include "quantizer.h"
 #include "ring_buffer.h"
 #include <vector>
+#include <memory>
+#include "adaptq/storage_backend.h"
+#include "adaptq/kernel_backend.h"
+#include "adaptq/policy.h"
 
-// Attention head using KVFlatBuffer + LUT-based K-attention.
-// K logits: build LUT[i][k]=q_rot[i]*CB[k] once, then sum LUT[i][idx[i]] per
-// token. V reconstruction: sparse (entropy-based dynamic threshold).
+// Attention head using abstract storage + kernel backends
 struct AttentionHead {
   Quantizer quant;
-  KVFlatBuffer kv_buf;
+  std::unique_ptr<IStorageBackend> storage;
+  std::unique_ptr<IKernelBackend> kernel;
+  std::unique_ptr<IPolicy> policy;
+  
   int dim;
   int padded;
   int bits;
@@ -29,8 +34,8 @@ struct AttentionHead {
   // Batch compute for multiple queries against the same KV cache
   int compute_batch(const float *queries, int num_queries, float *outs) const;
 
-  size_t kv_bytes() const { return kv_buf.kv_bytes(); }
-  size_t k_scan_bytes() const { return kv_buf.k_scan_bytes(); }
+  size_t kv_bytes() const { return storage ? storage->kv_bytes() : 0; }
+  size_t k_scan_bytes() const { return storage ? storage->k_scan_bytes() : 0; }
 };
 
 float dot_product(const float *a, const float *b, int n);
