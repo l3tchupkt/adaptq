@@ -134,8 +134,9 @@ void adaptq_reset(adaptq_ctx_t h) {
     return;
 
   auto *ctx = static_cast<AdapTQCtx *>(h);
-  ctx->head.kv_buf.size = 0;
-  ctx->head.kv_buf.head = 0;
+  if (ctx->head.storage) {
+      ctx->head.storage->clear();
+  }
   ctx->head.raw_kv.clear();  /* clear hybrid FP32 mirror — stale after reset */
   tl_error_buf[0] = '\0';
 }
