@@ -1,0 +1,24 @@
+chore(audit): V2.1 release validation - commit untracked V2.1 code and fix bugs
+
+Bugs fixed during audit:
+- adaptq/__init__.py: duplicate docstring + syntax error (CRITICAL)
+- adaptq/__init__.py: missing __version__ = "0.2.1"
+- adaptq/replay.py: stale build_v2 path, should be build_release
+- adaptq/replay.py: duplicate --format flag regression
+- adaptq/runtime_py/backends/transformers_hf.py: torch_dtype deprecated
+- .gitignore: expanded to cover all build artifacts
+
+First-time commit of all V2.1 untracked files:
+- adaptq/runtime_py/ multi-backend adapter layer
+- examples/ (6 demos)
+- integration_tests/
+- runtime/adapters/
+- .github/workflows/integration.yml
+
+Validation results:
+- CTest Release: 67/67 PASS
+- CTest Debug: 67/67 PASS
+- Packaging: 18/18 PASS
+- Runtime: 41/41 PASS, 0 FAIL
+- Security: 10/10 PASS
+- CI YAML: yamllint clean

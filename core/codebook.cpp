@@ -63,12 +63,22 @@ const float* get_codebook(int bits) {
     }
 }
 
-int codebook_size(int bits) { return 1 << bits; }
+int codebook_size(int bits) {
+    if (bits <= 2) return 4;
+    if (bits == 3) return 8;
+    return 16;
+}
 
 // Branchless binary-search via conditional adds.
 // No branch mispredictions; compiles to cmov chains.
 int quantize_fast(float v, int bits) {
-    if (bits == 4) {
+    if (std::isnan(v)) {
+        // Handle NaN gracefully: map to closest-to-zero centroid
+        if (bits <= 2) return 1; // CB2[1] = -0.4528f
+        if (bits == 3) return 3; // CB3[3] = -0.2451f
+        return 7;                // CB4[7] = 0.0000f
+    }
+    if (bits >= 4) {
         // 4-level binary search over 15 thresholds → index in [0,15]
         int i = (v >= THRESH4[7]) ? 8 : 0;
         i    += (v >= THRESH4[i + 3]) ? 4 : 0;
@@ -82,7 +92,7 @@ int quantize_fast(float v, int bits) {
         i    += (v >= THRESH3[i    ]) ? 1 : 0;
         return i;
     }
-    // bits == 2
+    // bits <= 2
     int i = (v >= THRESH2[1]) ? 2 : 0;
     i    += (v >= THRESH2[i ]) ? 1 : 0;
     return i;
@@ -90,6 +100,10 @@ int quantize_fast(float v, int bits) {
 
 // Legacy fallback (used in tests for correctness comparison)
 int quantize_scalar(float val, const float* cb, int cb_size) {
+    if (!cb || cb_size <= 0) return 0;
+    if (std::isnan(val)) return 0;
+    if (val >= cb[cb_size - 1]) return cb_size - 1;
+    if (val <= cb[0]) return 0;
     int best = 0;
     float best_dist = fabsf(val - cb[0]);
     for (int i = 1; i < cb_size; ++i) {
@@ -99,4 +113,10 @@ int quantize_scalar(float val, const float* cb, int cb_size) {
     return best;
 }
 
-float dequantize_scalar(int idx, const float* cb) { return cb[idx]; }
+
+float dequantize_scalar(int idx, const float* cb) {
+    if (!cb) return 0.0f;
+    if (idx < 0) idx = 0;
+    return cb[idx];
+}
+

@@ -195,7 +195,29 @@ TEST_CASE("RuntimeContext: token log is populated when log_tokens=true", "[runti
         rand_vec(v.data(), 64, (unsigned)(t + 200));
         ctx.append(0, 0, k.data(), v.data());
     }
-
     REQUIRE(ctx.token_log().size() == 5u);
     REQUIRE(ctx.token_log_data().size() == 5u * 2u * 64u);
+}
+
+/* ---- Context Limits (Issue #22) --------------------------------------- */
+
+TEST_CASE("RuntimeContext: HARFixedStrategy handles sizes around and above 65536 tokens", "[runtime][limits]") {
+    RuntimeContextConfig cfg = make_cfg(1, 1, 64, 4, 100005);
+    RuntimeContext ctx;
+    ctx.init(cfg); // uses har_fixed by default
+
+    std::vector<float> k(64, 0.1f), v(64, 0.1f), q(64, 0.1f), out(64, 0.f);
+
+    int test_sizes[] = { 65535, 65536, 65537, 100000 };
+    int current_size = 0;
+
+    for (int target : test_sizes) {
+        while (current_size < target) {
+            ctx.append(0, 0, k.data(), v.data());
+            current_size++;
+        }
+        
+        ComputeMetrics m = ctx.compute(0, 0, q.data(), out.data());
+        REQUIRE(m.n_tokens_used == target);
+    }
 }

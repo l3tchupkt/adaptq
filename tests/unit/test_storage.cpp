@@ -50,6 +50,43 @@ TEST_CASE("ContiguousSlabStorage: ring eviction at capacity", "[storage][contigu
     REQUIRE(r.data[0] == 99);
 }
 
+TEST_CASE("ContiguousSlabStorage: KV writes stay paired across wrap", "[storage][contiguous][kv]") {
+    ContiguousSlabStorage st;
+    st.init(4, 4); /* two logical K/V pairs */
+
+    auto k0 = make_data(4, 10);
+    auto v0 = make_data(4, 20);
+    auto k1 = make_data(4, 11);
+    auto v1 = make_data(4, 21);
+
+    StorageSlot sk0 = st.write(k0.data(), 4, 1.f, 0x04);
+    StorageSlot sv0 = st.write(v0.data(), 4, 2.f, 0x04);
+    StorageSlot sk1 = st.write(k1.data(), 4, 3.f, 0x04);
+    StorageSlot sv1 = st.write(v1.data(), 4, 4.f, 0x04);
+
+    REQUIRE(sk0 == 0);
+    REQUIRE(sv0 == 2);
+    REQUIRE(sk1 == 1);
+    REQUIRE(sv1 == 3);
+    REQUIRE(st.read(0).data[0] == 10);
+    REQUIRE(st.read(1).data[0] == 11);
+    REQUIRE(st.read(2).data[0] == 20);
+    REQUIRE(st.read(3).data[0] == 21);
+
+    auto k2 = make_data(4, 12);
+    auto v2 = make_data(4, 22);
+    StorageSlot sk2 = st.write(k2.data(), 4, 5.f, 0x04);
+    StorageSlot sv2 = st.write(v2.data(), 4, 6.f, 0x04);
+
+    /* The oldest K/V pair is replaced together. */
+    REQUIRE(sk2 == 0);
+    REQUIRE(sv2 == 2);
+    REQUIRE(st.read(0).data[0] == 12);
+    REQUIRE(st.read(2).data[0] == 22);
+    REQUIRE(st.read(1).data[0] == 11);
+    REQUIRE(st.read(3).data[0] == 21);
+}
+
 TEST_CASE("ContiguousSlabStorage: reset zeroes size", "[storage][contiguous]") {
     ContiguousSlabStorage st;
     st.init(8, 8);
@@ -119,6 +156,18 @@ TEST_CASE("SegmentedSlabStorage: reset clears all slabs", "[storage][segmented]"
     REQUIRE(st.bytes_used() > 0);
     st.reset();
     REQUIRE(st.bytes_used() == 0);
+}
+
+TEST_CASE("SegmentedSlabStorage: free_slot tracks actual data bytes", "[storage][segmented]") {
+    SegmentedSlabStorage st;
+    st.init(4, 8);
+    auto full = make_data(8, 0xAA);
+    auto partial = make_data(4, 0xBB);
+    st.write(full.data(), 8, 1.f, 0x04);
+    StorageSlot slot = st.write(partial.data(), 4, 2.f, 0x04);
+    REQUIRE(st.bytes_used() == 12);
+    st.free_slot(slot);
+    REQUIRE(st.bytes_used() == 8);
 }
 
 /* ======================================================================

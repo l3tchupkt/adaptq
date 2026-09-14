@@ -93,6 +93,8 @@ void KVFlatBuffer::free_aligned() {
 
 int KVFlatBuffer::insert(const uint8_t *kp, float ks, const uint8_t *vp,
                          float vs, int pos) {
+  if (capacity <= 0)
+    return -1;
   int idx = head;
   memcpy(k_data + (size_t)idx * packed_bytes, kp, packed_bytes);
   memcpy(v_data + (size_t)idx * packed_bytes, vp, packed_bytes);

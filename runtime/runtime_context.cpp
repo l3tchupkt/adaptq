@@ -24,11 +24,6 @@
 #include "../strategies/har_fixed.cpp"
 #include "../strategies/fp_passthrough.cpp"
 /* Pull in kernel backend implementations. */
-#include "../kernels/scalar/kdot_scalar.cpp"
-#if defined(__AVX2__)
-#  include "../kernels/avx2/kdot_avx2.cpp"
-#endif
-
 namespace adaptq {
 
 /* =========================================================================
@@ -106,13 +101,13 @@ void RuntimeContext::init(const RuntimeContextConfig &cfg,
      * For HAR 4-bit: (padded * 4 + 7) / 8 = padded / 2 bytes.
      * For FP32:      dim * 4 bytes.
      * Use the larger bound to keep storage backend generic.  */
-    int padded       = next_pow2_rt(cfg.dim);
+    int padded       = next_pow2_rt(cfg_.dim);
     int slot_bytes_q = (padded * cfg.bits + 7) / 8;
-    int slot_bytes_f = cfg.dim * (int)sizeof(float);
+    int slot_bytes_f = cfg_.dim * (int)sizeof(float);
     int slot_bytes   = std::max(slot_bytes_q, slot_bytes_f);
 
     HeadConfig hcfg;
-    hcfg.dim      = cfg.dim;
+    hcfg.dim      = cfg_.dim;
     hcfg.bits     = cfg.bits;
     hcfg.capacity = cfg.capacity;
     hcfg.v_mass   = cfg.v_mass;
@@ -243,24 +238,21 @@ void RuntimeContext::append(int          layer,
     /* Compress K. */
     comp->compress(k_vec, cfg_.dim, true, ctx);
 
-    /* Compress V — update cache_size to reflect K already stored. */
+    /* Compress V. The storage backend maintains independent K/V regions,
+     * so K and V remain paired even when the FIFO rings wrap. */
     int n = cache_sizes_[idx];
-    /* V slots start at offset n in the storage ring. Storage write()
-     * increments its own internal head — K and V alternate, so the
-     * slot layout is [K0, K1, …, Kn, V0, V1, …, Vn] in a contiguous slab.
-     * ContiguousSlabStorage doesn't differentiate K/V — both appends just
-     * use the next slot. The read-back in compute() uses [i] for K and
-     * [n + i] for V (with n = number of K/V pairs). */
     comp->compress(v_vec, cfg_.dim, false, ctx);
 
-    /* Eviction decision (after both K and V are stored). */
-    ctx.cache_size = n + 1;
+    /* Eviction decision (after both K and V are stored). The storage ring
+     * performs the physical overwrite; this callback remains available to
+     * policies for observability. */
+    ctx.cache_size = std::min(n + 1, cfg_.capacity);
     EvictionDecision d = evic->on_append(ctx);
     if (d.evict && d.evict_slot >= 0) {
         storages_[idx]->free_slot((StorageSlot)d.evict_slot);
     }
 
-    cache_sizes_[idx] = n + 1;
+    cache_sizes_[idx] = std::min(n + 1, cfg_.capacity);
 
     /* Log K/V FP32 vectors if snapshot logging is enabled. */
     if (cfg_.log_tokens) {
@@ -375,7 +367,7 @@ ComputeMetrics RuntimeContext::compute(int          layer,
         /* V accumulation. */
         v_acc_.assign(cfg_.dim, 0.f);
         for (int i = 0; i < n; ++i) {
-            CompressResult vr = st->read((StorageSlot)(n + i));
+            CompressResult vr = st->read((StorageSlot)(ctx.cache_capacity + i));
             const float *v = reinterpret_cast<const float *>(vr.data);
             float w = logits_[i];
             for (int d = 0; d < cfg_.dim; ++d) v_acc_[d] += w * v[d];
@@ -403,7 +395,8 @@ ComputeMetrics RuntimeContext::compute(int          layer,
 
     /* ---- 5. AttentionFeedback → eviction ------------------------------- */
     {
-        static thread_local int attn_slots[65536];
+        static thread_local std::vector<int> attn_slots;
+        attn_slots.resize(n);
         for (int i = 0; i < n; ++i) attn_slots[i] = i;
         float lat = 0.f;
         if (n > 0) {
@@ -412,7 +405,7 @@ ComputeMetrics RuntimeContext::compute(int          layer,
         }
         AttentionFeedback fb;
         fb.weights    = logits_.data();
-        fb.slots      = attn_slots;
+        fb.slots      = attn_slots.data();
         fb.n          = n;
         fb.latency_us = lat;
         strat->eviction()->on_attention(fb, ctx);

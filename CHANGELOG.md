@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.2] — 2026-09-14 — V2.2: Stabilization & Security Baseline
+
+### Security
+- **Snapshot Storage Validations**: Added stringent parameter and bound checks to `SessionSnapshot::load()` preventing illegal dimensions, token counts, and bit widths from causing malformed buffer allocations or buffer over-reads. 
+
+### Fixed
+- **Max-Lloyd Codebook Boundaries (Issue #16)**: Resolved potential floating point exceptions and undefined behaviors when constructing centroids from vectors containing `NaN`s, massive infinity outliers, or pure-zero sequences.
+
+### Portability
+- **AVX2 Dynamic Dispatch (Issue #7)**: Refactored the core SIMD architecture away from global `-mavx2` flags and `#ifdef __AVX2__` guards. The engine now uses `__builtin_cpu_supports` paired with function-specific `#pragma GCC target` attributes. Binary wheels published to PyPI will now safely fall back to scalar processing on older CPUs instead of crashing with `SIGILL`.
+
+### Tests
+- **Boundary Condition Regressions**: Extended C API tests to exhaustively validate `adaptq_append` edge cases (NaNs, infinite tensors).
+- **Capability Testing**: CTest suite automatically accommodates the AVX2 capability detection framework.
+
+---
+
 ## [0.2.1] — 2026-07-22 — V2.1: Real Runtime Integration & Validation
 
 ### Added

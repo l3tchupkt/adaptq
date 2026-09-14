@@ -83,7 +83,7 @@ def run_accuracy_test():
     
     assert avg_mse < THRESHOLD_MSE_MAX, f"Accuracy Regression: MSE {avg_mse} exceeds threshold {THRESHOLD_MSE_MAX}!"
     assert avg_cos > THRESHOLD_COS_MIN, f"Accuracy Regression: Cosine {avg_cos} below threshold {THRESHOLD_COS_MIN}!"
-    print("\n✅ ACCURACY TESTS PASSED.")
+    print("\n[SUCCESS] ACCURACY TESTS PASSED.")
 
 if __name__ == "__main__":
     run_accuracy_test()

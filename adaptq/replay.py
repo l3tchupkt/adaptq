@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import struct
 import subprocess
 import tempfile
 from pathlib import Path
@@ -71,6 +72,87 @@ def _get_binary() -> str:
             "  pip install ."
         )
     return _BINARY
+
+
+# ---------------------------------------------------------------------------
+# CLI output helpers
+# ---------------------------------------------------------------------------
+
+_VALID_OUTPUT_FORMATS = {"json", "csv", "md", "tex"}
+
+# AQSS V2 header written by replay/session_snapshot.cpp::save().
+# <IIiiiiiiQ = magic, version, 6 signed 32-bit fields, flags.
+_SNAPSHOT_HEADER = struct.Struct("<IIiiiiiiQ")
+_SNAPSHOT_MAGIC = 0x41515353
+_SNAPSHOT_VERSION = 2
+
+
+def _validate_output_format(output_format: str) -> None:
+    if output_format not in _VALID_OUTPUT_FORMATS:
+        allowed = ", ".join(sorted(_VALID_OUTPUT_FORMATS))
+        raise ValueError(
+            f"unsupported output_format {output_format!r}; expected one of: {allowed}"
+        )
+
+
+def _load_json(path: str) -> dict:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"failed to read JSON replay result from {path}: {exc}") from exc
+
+
+def _run_cli(command: List[str], error_prefix: str) -> dict:
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"{error_prefix}:\n{result.stderr}")
+    if not result.stdout.strip():
+        raise RuntimeError(f"{error_prefix}: CLI returned no JSON summary")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"{error_prefix}: invalid JSON summary from CLI: {exc}"
+        ) from exc
+
+
+def _run_json_or_file(
+    command: List[str],
+    *,
+    output_format: str,
+    output_path: Optional[Union[str, Path]],
+    temp_suffix: str,
+    error_prefix: str,
+) -> dict:
+    """Run a CLI report once and return its structured JSON summary.
+
+    When the caller supplies output_path, the requested format is written by
+    the CLI and a JSON copy of the same report is emitted on stdout. Without
+    output_path, JSON is captured in a temporary file for the Python result.
+    """
+    if output_path is not None:
+        command += [
+            "--format", output_format,
+            "--output", str(output_path),
+            "--summary-json",
+        ]
+        return _run_cli(command, error_prefix)
+
+    with tempfile.NamedTemporaryFile(
+        suffix=temp_suffix, delete=False
+    ) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        command += ["--format", "json", "--output", tmp_path]
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"{error_prefix}:\n{result.stderr}")
+        return _load_json(tmp_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -168,8 +250,8 @@ class ReplayEngine:
     Python interface to the AdapTQ V2 ReplayEngine.
 
     Uses the ``adaptq replay`` and ``adaptq compare`` CLI subcommands
-    internally. All I/O goes through temporary files to avoid piping
-    binary snapshot data.
+    internally. Snapshot files stay on disk; only the structured JSON result
+    is captured through Python when no output_path is requested.
 
     Example
     -------
@@ -208,14 +290,17 @@ class ReplayEngine:
         collect_metrics : bool
             Collect per-token ComputeMetrics (slower but richer output).
         output_format : str
-            Output format: ``"json"`` (default), ``"csv"``, ``"md"``, ``"tex"``.
+            Output format for ``output_path``: ``"json"`` (default), ``"csv"``,
+            ``"md"``, or ``"tex"``. Ignored when ``output_path`` is omitted,
+            because the Python API returns a structured ``ReplayResult``.
         output_path : str or Path, optional
-            Write output to this file instead of capturing it.
+            Write the replay report to this file using ``output_format``.
 
         Returns
         -------
         ReplayResult
         """
+        _validate_output_format(output_format)
         binary = _get_binary()
         cmd = [binary, "replay", str(snapshot_path)]
         if strategy:
@@ -224,27 +309,15 @@ class ReplayEngine:
             cmd += ["--from-token", str(from_token)]
         if collect_metrics:
             cmd.append("--metrics")
-        # Note: output_format used only if output_path specified; internal capture always uses json
 
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
-            tmp_path = tmp.name
-
-        try:
-            # Always capture JSON internally; write to user path separately if requested
-            cmd += ["--format", "json", "--output", tmp_path]
-            result = subprocess.run(
-                cmd, capture_output=True, text=True
-            )
-            if result.returncode != 0:
-                raise RuntimeError(
-                    f"adaptq replay failed:\n{result.stderr}"
-                )
-            with open(tmp_path) as f:
-                raw = json.load(f)
-            return ReplayResult(raw)
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+        raw = _run_json_or_file(
+            cmd,
+            output_format=output_format,
+            output_path=output_path,
+            temp_suffix=".json",
+            error_prefix="adaptq replay failed",
+        )
+        return ReplayResult(raw)
 
     def compare(
         self,
@@ -264,9 +337,11 @@ class ReplayEngine:
         strategies : list[str]
             Strategy names to compare (e.g. ``["har_fixed", "fp_passthrough"]``).
         output_format : str
-            Output format for file output (``"json"``, ``"csv"``, ``"md"``, ``"tex"``).
+            Output format for ``output_path``: ``"json"``, ``"csv"``, ``"md"``,
+            or ``"tex"``. Ignored when ``output_path`` is omitted because the
+            Python API returns a structured ``CompareResult``.
         output_path : str or Path, optional
-            Write comparison output to file (optional).
+            Write comparison output to this file using ``output_format``.
 
         Returns
         -------
@@ -274,33 +349,25 @@ class ReplayEngine:
         """
         if not strategies:
             raise ValueError("strategies list must be non-empty")
+        _validate_output_format(output_format)
 
         binary = _get_binary()
         strats_csv = ",".join(strategies)
+        cmd = [
+            binary, "compare", str(snapshot_path),
+            "--strategies", strats_csv,
+        ]
 
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
-            tmp_path = tmp.name
-
-        try:
-            cmd = [
-                binary, "compare", str(snapshot_path),
-                "--strategies", strats_csv,
-                "--format", "json",
-                "--output", tmp_path,
-            ]
-            result = subprocess.run(
-                cmd, capture_output=True, text=True
-            )
-            if result.returncode != 0:
-                raise RuntimeError(
-                    f"adaptq compare failed:\n{result.stderr}"
-                )
-            with open(tmp_path) as f:
-                rows = json.load(f)
-            return CompareResult(rows)
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+        rows = _run_json_or_file(
+            cmd,
+            output_format=output_format,
+            output_path=output_path,
+            temp_suffix=".json",
+            error_prefix="adaptq compare failed",
+        )
+        if not isinstance(rows, list):
+            raise RuntimeError("adaptq compare failed: expected a JSON array")
+        return CompareResult(rows)
 
 
 # ---------------------------------------------------------------------------
@@ -309,35 +376,58 @@ class ReplayEngine:
 
 def snapshot_info(path: Union[str, Path]) -> dict:
     """
-    Return basic metadata from a ``.aqss`` snapshot file without full replay.
+    Return metadata from the header of a ``.aqss`` snapshot file.
 
-    This loads the snapshot header only by running ``adaptq replay`` with
-    0 tokens and JSON output.
+    Only the fixed-size snapshot header is read; no replay is performed and
+    no per-head storage or token log data is loaded.
 
     Returns
     -------
     dict with keys: n_tokens, n_layers, n_heads, dim, has_token_log,
     has_strategy_state.
     """
-    binary = _get_binary()
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
-        tmp_path = tmp.name
+    snapshot_path = Path(path)
     try:
-        cmd = [binary, "replay", str(path),
-               "--from-token", "0",
-               "--format", "json",
-               "--output", tmp_path]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"adaptq replay failed:\n{result.stderr}")
-        with open(tmp_path) as f:
-            raw = json.load(f)
-        return {
-            "n_tokens": raw.get("snapshot_n_tokens", 0),
-            "n_layers": raw.get("n_layers", 0),
-            "n_heads":  raw.get("n_heads", 0),
-            "dim":      raw.get("dim", 0),
-        }
-    finally:
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+        with snapshot_path.open("rb") as f:
+            header = f.read(_SNAPSHOT_HEADER.size)
+    except OSError as exc:
+        raise RuntimeError(
+            f"snapshot_info: cannot read {snapshot_path}: {exc}"
+        ) from exc
+
+    if len(header) != _SNAPSHOT_HEADER.size:
+        raise RuntimeError(
+            "snapshot_info: truncated snapshot header "
+            f"(expected {_SNAPSHOT_HEADER.size} bytes, got {len(header)})"
+        )
+
+    (
+        magic,
+        version,
+        n_layers,
+        n_heads,
+        dim,
+        _bits,
+        n_tokens,
+        n_heads_total,
+        flags,
+    ) = _SNAPSHOT_HEADER.unpack(header)
+
+    if magic != _SNAPSHOT_MAGIC:
+        raise RuntimeError("snapshot_info: invalid magic (not an AQSS file)")
+    if version > _SNAPSHOT_VERSION:
+        raise RuntimeError(
+            f"snapshot_info: snapshot version {version} > current version "
+            f"{_SNAPSHOT_VERSION}"
+        )
+    if any(value < 0 for value in (n_layers, n_heads, dim, n_tokens, n_heads_total)):
+        raise RuntimeError("snapshot_info: invalid negative value in snapshot header")
+
+    return {
+        "n_tokens": n_tokens,
+        "n_layers": n_layers,
+        "n_heads": n_heads,
+        "dim": dim,
+        "has_token_log": bool(flags & 1),
+        "has_strategy_state": bool(flags & 2),
+    }

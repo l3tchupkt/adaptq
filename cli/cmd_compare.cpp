@@ -20,6 +20,7 @@
  *     [--format json|csv|md|tex]
  *     [--output <file>]
  *     [--metrics latency,quality,memory,bits]
+ *     [--summary-json]
  *
  * Replays the same token log with each named strategy and reports the
  * per-strategy metrics in the requested format.
@@ -154,7 +155,8 @@ int cmd_compare(int argc, char **argv) {
                      "Options:\n"
                      "  --strategies har_fixed,fp_passthrough\n"
                      "  --format json|csv|md|tex\n"
-                     "  --output <file>\n";
+                     "  --output <file>\n"
+                     "  --summary-json\n";
         return 1;
     }
 
@@ -162,6 +164,7 @@ int cmd_compare(int argc, char **argv) {
     std::string strategies_arg;
     std::string format      = "json";
     std::string output_path;
+    bool        summary_json = false;
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--strategies") == 0 && i + 1 < argc) {
@@ -170,6 +173,8 @@ int cmd_compare(int argc, char **argv) {
             format = argv[++i];
         } else if (strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
             output_path = argv[++i];
+        } else if (strcmp(argv[i], "--summary-json") == 0) {
+            summary_json = true;
         }
     }
 
@@ -243,6 +248,12 @@ int cmd_compare(int argc, char **argv) {
         cmp_tex(rows, *pout);
     else
         cmp_json(rows, *pout);
+
+    /* The Python compare API requests the human-readable artifact in the
+     * requested format while also needing structured rows. Keep the two
+     * channels separate so each strategy is replayed only once. */
+    if (summary_json)
+        cmp_json(rows, std::cout);
 
     return 0;
 }

@@ -17,7 +17,7 @@ ext_modules = [
         ],
         include_dirs=["include", pybind11.get_include()],
         language="c++",
-        extra_compile_args=["-std=c++17", "-O3", "-march=native", "-mavx2", "-mfma", "-fopenmp"],
+        extra_compile_args=["-std=c++17", "-O3", "-fopenmp"],
         extra_link_args=["-fopenmp"],
     ),
 ]

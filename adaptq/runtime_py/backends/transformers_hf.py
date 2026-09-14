@@ -125,7 +125,7 @@ class AdapTQCache(DynamicCache):
                         engine.append(k_step, v_step)
 
                     # Track KV byte usage
-                    self._kv_bytes_adaptq = engine.kv_bytes
+                    self._kv_bytes_adaptq = sum(e.kv_bytes for e in self._engines.values())
                     # FP16: n_tokens * n_kv_heads * head_dim * 2 tensors (K+V) * 2 bytes/elem
                     self._n_tokens = engine.pos
                     self._kv_bytes_fp16 = (

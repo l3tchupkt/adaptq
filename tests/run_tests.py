@@ -30,7 +30,8 @@ import time
 ADAPTQ_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _br = os.path.join(ADAPTQ_DIR, "build_release")
 _bc = os.path.join(ADAPTQ_DIR, "build_clean")
-BUILD_DIR = _bc if os.path.exists(_bc) else _br
+_b = os.path.join(ADAPTQ_DIR, "build")
+BUILD_DIR = _b if os.path.exists(_b) else (_bc if os.path.exists(_bc) else _br)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Utilities
@@ -81,7 +82,7 @@ def stage1_cpp_tests():
             failed += 1
 
     # Extract summary line
-    total_ok = "100%" in out and "0 tests failed" in out
+    total_ok = "100%" in out and ("0 tests failed" in out or "passed out of" in out)
     ok = check(rc == 0 and total_ok,
                "ctest return code 0 + 100% pass",
                f"{passed} passed, {failed} failed")
@@ -335,7 +336,7 @@ import platform
 ADAPTQ_DIR = r"___ADAPTQ_DIR___"
 is_windows = platform.system() == "Windows"
 lib_name = "adaptq.dll" if is_windows else "libadaptq.so"
-LIB_CANDIDATES = [os.path.join(ADAPTQ_DIR, "build_clean", lib_name), os.path.join(ADAPTQ_DIR, "build_release", lib_name)]
+LIB_CANDIDATES = [os.path.join(ADAPTQ_DIR, "build", lib_name), os.path.join(ADAPTQ_DIR, "build", "Release", lib_name), os.path.join(ADAPTQ_DIR, "build_clean", lib_name), os.path.join(ADAPTQ_DIR, "build_release", lib_name)]
 LIB = next((p for p in LIB_CANDIDATES if os.path.exists(p)), LIB_CANDIDATES[0])
 
 if not os.path.exists(LIB):
@@ -373,6 +374,11 @@ dim = 128
 h = lib.adaptq_create(dim, 4, 512, 42, 0.0, 0)
 results.append(("create returns non-null", h is not None))
 lib.adaptq_destroy(h)
+
+# Test 1b: create with invalid dim returns null (security)
+h_inv = lib.adaptq_create(-1, 4, 512, 42, 0.0, 0)
+results.append(("create(-1) returns null", h_inv is None))
+
 
 # Test 2: kv_bytes=0 before append
 h = lib.adaptq_create(dim, 4, 512, 42, 0.0, 0)
@@ -495,7 +501,7 @@ import platform
 ADAPTQ_DIR = r"___ADAPTQ_DIR___"
 is_windows = platform.system() == "Windows"
 lib_name = "adaptq.dll" if is_windows else "libadaptq.so"
-LIB_CANDIDATES = [os.path.join(ADAPTQ_DIR, "build_clean", lib_name), os.path.join(ADAPTQ_DIR, "build_release", lib_name)]
+LIB_CANDIDATES = [os.path.join(ADAPTQ_DIR, "build", lib_name), os.path.join(ADAPTQ_DIR, "build", "Release", lib_name), os.path.join(ADAPTQ_DIR, "build_clean", lib_name), os.path.join(ADAPTQ_DIR, "build_release", lib_name)]
 LIB = next((p for p in LIB_CANDIDATES if os.path.exists(p)), LIB_CANDIDATES[0])
 
 if not os.path.exists(LIB):

@@ -2,14 +2,14 @@ name: AdapTQ V2.1 Integration Tests
 
 on:
   push:
-    branches: [main, v2.1]
+    branches: [main, v2.1, v2]
   pull_request:
-    branches: [main]
+    branches: [main, v2]
 
 jobs:
-  # ── Unit + Conformance tests (C++) ─────────────────────────────────────
+  # ── Unit, Conformance & Security tests (C++) ─────────────────────────────────────
   cpp-tests:
-    name: C++ Tests (Ubuntu)
+    name: C++ Unit & Security Tests (Ubuntu)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
       - name: Build
         run: cmake --build build_v2 --parallel 4
 
-      - name: Run tests
+      - name: Run unit, conformance, and security tests
         run: cd build_v2 && ctest --output-on-failure -j4
 
   # ── Python adapter contract tests (no model needed) ────────────────────
@@ -41,7 +41,7 @@ jobs:
       - name: Install AdapTQ + backends
         run: |
           pip install -e .
-          pip install transformers accelerate torch --index-url https://download.pytorch.org/whl/cpu
+          pip install transformers accelerate torch --extra-index-url https://download.pytorch.org/whl/cpu
           pip install llama-cpp-python requests pytest
 
       - name: Run adapter contract tests
@@ -64,7 +64,7 @@ jobs:
       - name: Install deps
         run: |
           pip install -e .
-          pip install transformers accelerate torch --index-url https://download.pytorch.org/whl/cpu
+          pip install transformers accelerate torch --extra-index-url https://download.pytorch.org/whl/cpu
           pip install pytest huggingface-hub
 
       - name: Run transformers integration tests
@@ -99,7 +99,9 @@ jobs:
       - name: Install AdapTQ
         run: |
           pip install -e .
-          pip install numpy torch
+          pip install numpy torch pytest
 
       - name: Run Python validation suite
-        run: python tests/run_tests.py --stage 2
+        run: |
+          python tests/run_tests.py --stage 2
+          pytest tests/test_replay_api.py -v

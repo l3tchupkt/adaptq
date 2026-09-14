@@ -234,13 +234,11 @@ public:
     const char *name()         const override { return "avx2"; }
 };
 
-/* Updated select_kernel_backend: prefer AVX2 when compiled in ----------- */
-IKernelBackend *select_kernel_backend() {
-    static AVX2KernelBackend avx2_instance;
-    return &avx2_instance;
+IKernelBackend *create_avx2_backend() {
+    static AVX2KernelBackend instance;
+    return &instance;
 }
-
-} /* namespace adaptq */
+} /* namespace adaptq */
 
 #else  /* !__AVX2__ */
 

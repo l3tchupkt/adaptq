@@ -19,6 +19,7 @@
  *     [--metrics]
  *     [--output <file>]
  *     [--format json|csv|md|tex]
+ *     [--summary-json]
  *
  * Default:
  *   Replays all tokens using the same strategy configuration as the snapshot.
@@ -139,7 +140,8 @@ int cmd_replay(int argc, char **argv) {
                      "  --from-token N\n"
                      "  --metrics\n"
                      "  --output <file>\n"
-                     "  --format json|csv|md|tex\n";
+                     "  --format json|csv|md|tex\n"
+                     "  --summary-json\n";
         return 1;
     }
 
@@ -149,6 +151,7 @@ int cmd_replay(int argc, char **argv) {
     std::string format       = "json";
     int         from_token   = -1;
     bool        collect_m    = false;
+    bool        summary_json = false;
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--strategy") == 0 && i + 1 < argc) {
@@ -161,6 +164,8 @@ int cmd_replay(int argc, char **argv) {
             output_path = argv[++i];
         } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc) {
             format = argv[++i];
+        } else if (strcmp(argv[i], "--summary-json") == 0) {
+            summary_json = true;
         }
     }
 
@@ -198,7 +203,6 @@ int cmd_replay(int argc, char **argv) {
         }
         /* Use internal make_contiguous via default init then re-init with factory. */
         ctx.init(cfg, sfn, make_contiguous);
-
     }
 
     ReplayEngine engine(collect_m);
@@ -206,7 +210,7 @@ int cmd_replay(int argc, char **argv) {
 
     try {
         if (from_token >= 0) {
-            /* Branch mode — warm up then stop. */
+            /* Branch mode — warm-up then stop. */
             engine.branch(snap, ctx, from_token);
             report.n_tokens_replayed = from_token;
             report.strategy_name     = ctx.get_strategy(0, 0)
@@ -242,6 +246,12 @@ int cmd_replay(int argc, char **argv) {
         format_tex(report, snap, *pout);
     else
         format_json(report, snap, *pout);
+
+    /* The Python replay API requests the human-readable artifact in the
+     * requested format while also needing the structured result object. Keep
+     * the two channels separate so the replay itself happens only once. */
+    if (summary_json)
+        format_json(report, snap, std::cout);
 
     return 0;
 }

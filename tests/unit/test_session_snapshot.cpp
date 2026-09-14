@@ -145,6 +145,16 @@ TEST_CASE("SessionSnapshot: load rejects bad magic", "[snapshot]") {
     fs::remove(path);
 }
 
+TEST_CASE("SessionSnapshot: load rejects truncated file", "[snapshot]") {
+    std::string path = tmp_path("adaptq_truncated.aqss");
+    {
+        std::ofstream f(path, std::ios::binary);
+        uint32_t magic = SessionSnapshot::kMagic;
+        f.write(reinterpret_cast<const char *>(&magic), 4);
+    }
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
+    fs::remove(path);
+}
 TEST_CASE("SessionSnapshot: load missing file throws", "[snapshot]") {
     REQUIRE_THROWS_AS(SessionSnapshot::load("/nonexistent/path/adaptq.aqss"),
                       std::runtime_error);
@@ -193,4 +203,47 @@ TEST_CASE("SessionSnapshot: save/load is deterministic for same input", "[snapsh
 
     fs::remove(p1);
     fs::remove(p2);
+}
+
+
+TEST_CASE("SessionSnapshot: load rejects malicious allocation sizes", "[snapshot][security]") {
+    std::string path = tmp_path("adaptq_malicious_alloc.aqss");
+    auto ctx = make_ctx_with_tokens(2, 64, false);
+    SessionSnapshot orig = SessionSnapshot::capture(*ctx, false);
+    orig.save(path);
+    // Corrupt the n_heads_total field to be extremely large
+    std::fstream f(path, std::ios::in | std::ios::out | std::ios::binary);
+    f.seekp(28); // Offset to n_heads_total
+    int32_t bad_heads = 1000000000;
+    f.write(reinterpret_cast<char *>(&bad_heads), 4);
+    f.close();
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
+    orig.save(path);
+    // Corrupt data_bytes field of the first head
+    f.open(path, std::ios::in | std::ios::out | std::ios::binary);
+    f.seekp(40 + 16); // Approximate offset to data_bytes
+    uint64_t bad_bytes = 0xFFFFFFFFFFFF;
+    f.write(reinterpret_cast<char *>(&bad_bytes), 8);
+    f.close();
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
+    fs::remove(path);
+}
+TEST_CASE("SessionSnapshot: load rejects truncated files safely", "[snapshot][security]") {
+    std::string path = tmp_path("adaptq_truncated_2.aqss");
+    auto ctx = make_ctx_with_tokens(5, 64, true);
+    SessionSnapshot orig = SessionSnapshot::capture(*ctx, true);
+    orig.save(path);
+    std::string path_trunc = tmp_path("adaptq_truncated_3.aqss");
+    // Truncate file halfway
+    auto size = fs::file_size(path);
+    std::ifstream in(path, std::ios::binary);
+    std::ofstream out(path_trunc, std::ios::binary);
+    std::vector<char> buf(size / 2);
+    in.read(buf.data(), buf.size());
+    out.write(buf.data(), buf.size());
+    in.close();
+    out.close();
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path_trunc), std::runtime_error);
+    fs::remove(path);
+    fs::remove(path_trunc);
 }
