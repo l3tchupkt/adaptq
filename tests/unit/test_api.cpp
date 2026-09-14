@@ -94,6 +94,8 @@ TEST_CASE("adaptq_create with invalid parameters returns null", "[api][security]
     REQUIRE(adaptq_create(0, 4, 1024, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(-1, 4, 1024, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 0, 1024, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(128, 1, 1024, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(128, 5, 1024, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 4, -1, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 4, 1024, 42, 0.f, -100) == nullptr);
     REQUIRE(std::string(adaptq_last_error()).size() > 0);
