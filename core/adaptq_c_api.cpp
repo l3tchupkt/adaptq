@@ -282,5 +282,5 @@ unsigned int adaptq_features(void) {
 }
 
 const char *adaptq_version(void) {
-  return "0.2.2";
+  return "0.2.3";
 }

@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.3] — 2026-09-14 — V2.3: Runtime Abstraction Foundation
+
+### Added
+- **Runtime Abstraction Foundation**: Introduced stable architectural boundaries to safely isolate execution state from policy decisions.
+- **Interfaces**: Established `IPolicy`, `IStorageBackend`, and `IKernelBackend` as the core abstractions.
+- **Implementations**: Shipped `DefaultPolicy`, `ContiguousStorageBackend`, `ScalarKernelBackend`, and `AVX2KernelBackend`.
+- **Dynamic Dispatch**: Implemented initialization-time backend dispatch (`RuntimeFactory`) to safely route execution based on CPU capabilities (e.g. AVX2 vs Scalar) before critical paths are hit.
+
+### Changed
+- **Zero-Overhead K/V Scan**: Preserved 0.2.2 numerical behavior and highly optimized SIMD inner loops. One coarse-grained virtual dispatch occurs per query, with zero virtual dispatches inside the K/V inner loop.
+- **Test Coverage Restored**: Explicitly verified the full V1 test coverage. The speculative V2 components (such as `RuntimeContext` and `ReplayEngine`) have been safely deferred from the 0.2.3 stable release layer.
+
 ## [0.2.2] — 2026-09-14 — V2.2: Stabilization & Security Baseline
 
 ### Security
