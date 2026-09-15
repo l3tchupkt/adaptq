@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cmath>
 #include <string>
+#include <limits>
 
 /* -------------------------------------------------------------------------
  * tests/unit/test_api.cpp
@@ -95,6 +96,7 @@ TEST_CASE("adaptq_create with invalid parameters returns null", "[api][security]
     REQUIRE(adaptq_create(-1, 4, 1024, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 0, 1024, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 4, -1, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(128, 4, std::numeric_limits<int>::max(), 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 4, 1024, 42, 0.f, -100) == nullptr);
     REQUIRE(std::string(adaptq_last_error()).size() > 0);
 }
@@ -194,6 +196,7 @@ TEST_CASE("adaptq_mha_create with invalid parameters returns null", "[api][mha][
     REQUIRE(adaptq_mha_create(-1, 128, 4, 1024, 0, 0.f, 0) == nullptr);
     REQUIRE(adaptq_mha_create(4, 0, 4, 1024, 0, 0.f, 0) == nullptr);
     REQUIRE(adaptq_mha_create(4, 128, -1, 1024, 0, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_mha_create(4, 128, 4, std::numeric_limits<int>::max(), 0, 0.f, 0) == nullptr);
     REQUIRE(std::string(adaptq_last_error()).size() > 0);
 }
 
