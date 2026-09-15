@@ -209,12 +209,20 @@ struct AttentionWorkspace {
 static thread_local AttentionWorkspace tl_ws;
 
 float dot_product(const float *a, const float *b, int n) {
+  if (!a || !b || n <= 0)
+    return 0.f;
   float s = 0.f;
   for (int i = 0; i < n; ++i)
     s += a[i] * b[i];
   return s;
 }
 void softmax(float *x, int n) {
+  if (!x || n <= 0)
+    return;
+  if (n == 1) {
+    x[0] = 1.0f;
+    return;
+  }
   float mx = x[0];
   for (int i = 1; i < n; ++i)
     if (x[i] > mx)
@@ -224,9 +232,15 @@ void softmax(float *x, int n) {
     x[i] = expf(x[i] - mx);
     s += x[i];
   }
-  float inv = 1.f / s;
-  for (int i = 0; i < n; ++i)
-    x[i] *= inv;
+  if (s > 0.f && std::isfinite(s)) {
+    float inv = 1.f / s;
+    for (int i = 0; i < n; ++i)
+      x[i] *= inv;
+  } else {
+    float unif = 1.f / (float)n;
+    for (int i = 0; i < n; ++i)
+      x[i] = unif;
+  }
 }
 
 [[maybe_unused]]
@@ -475,7 +489,7 @@ int AttentionHead::compute(const float *q, float *out) const {
       logits[i] = expf(logits[i] - mx);
       sv += logits[i];
     }
-    float inv = 1.f / sv;
+    float inv = (sv > 0.f && std::isfinite(sv)) ? (1.f / sv) : (1.f / (float)n);
     // Weighted V accumulation
     memset(out, 0, dim * sizeof(float));
     for (int i = 0; i < n; ++i) {

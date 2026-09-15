@@ -351,3 +351,35 @@ TEST_CASE("MHA handles creation failure rollback and null safety cleanly", "[api
     // Double destroy on nullptr should be no-op
     adaptq_mha_destroy(nullptr);
 }
+
+/* ---- Softmax Numerical Stability Tests (Issue #58) -------------------- */
+#include "../../include/attention.h"
+
+TEST_CASE("softmax handles empty, null, single element, and zero-sum safely", "[attention][softmax][stability]") {
+    // Null and empty
+    softmax(nullptr, 10);
+    float dummy = 5.0f;
+    softmax(&dummy, 0);
+    softmax(&dummy, -1);
+
+    // Single element
+    float single[1] = { 42.0f };
+    softmax(single, 1);
+    REQUIRE(single[0] == 1.0f);
+
+    // Normal multi-element
+    float arr[3] = { 1.0f, 2.0f, 3.0f };
+    softmax(arr, 3);
+    float sum = arr[0] + arr[1] + arr[2];
+    REQUIRE(std::abs(sum - 1.0f) < 1e-5f);
+    REQUIRE(arr[2] > arr[1]);
+    REQUIRE(arr[1] > arr[0]);
+
+    // Extreme negative logits resulting in zero-sum underflow
+    float extreme[3] = { -1e30f, -1e30f, -1e30f };
+    softmax(extreme, 3);
+    // Should fall back to uniform distribution
+    for (int i = 0; i < 3; ++i) {
+        REQUIRE(std::abs(extreme[i] - (1.0f / 3.0f)) < 1e-5f);
+    }
+}
