@@ -52,6 +52,17 @@ TEST_CASE("RuntimeContext: init does not throw", "[runtime]") {
     REQUIRE_NOTHROW(ctx.init(cfg));
 }
 
+TEST_CASE("RuntimeContext: rejects invalid configuration before allocation", "[runtime][security]") {
+    RuntimeContext ctx;
+    for (RuntimeContextConfig cfg : {
+        make_cfg(0, 1), make_cfg(1, 0), make_cfg(1, 1, 0),
+        make_cfg(1, 1, 64, 1), make_cfg(1, 1, 64, 5),
+        make_cfg(1, 1, 64, 4, 0)
+    }) {
+        REQUIRE_THROWS_AS(ctx.init(cfg), std::invalid_argument);
+    }
+}
+
 TEST_CASE("RuntimeContext: get_strategy / get_storage return non-null", "[runtime]") {
     RuntimeContextConfig cfg = make_cfg(2, 4, 128, 4, 64);
     RuntimeContext ctx;
