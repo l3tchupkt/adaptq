@@ -314,6 +314,22 @@ SessionSnapshot SessionSnapshot::load(const std::string &path) {
         int n_entries = read_i32(f);
         if (n_entries < 0 || (size_t)n_entries * sizeof(float) > (size_t)file_size)
             throw std::runtime_error("SessionSnapshot::load: invalid token_log entries");
+
+        if (snap.n_tokens_ < 0 || snap.n_layers_ <= 0 || snap.n_heads_ <= 0) {
+            throw std::runtime_error(
+                "SessionSnapshot::load: invalid snapshot dimensions for token log");
+        }
+
+        const size_t expected_entries =
+            static_cast<size_t>(snap.n_tokens_) * static_cast<size_t>(snap.n_layers_) *
+            static_cast<size_t>(snap.n_heads_);
+        if (static_cast<size_t>(n_entries) != expected_entries) {
+            throw std::runtime_error(
+                "SessionSnapshot::load: token log entry count " +
+                std::to_string(n_entries) + " does not match expected count " +
+                std::to_string(expected_entries));
+        }
+
         snap.token_log_.resize(n_entries);
         for (auto &e : snap.token_log_) {
             e.layer = read_i32(f);

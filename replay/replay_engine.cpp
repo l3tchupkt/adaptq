@@ -17,6 +17,45 @@ namespace adaptq {
 extern StrategyFactory strategy_factory_by_name(const char *name);
 extern IStorageBackend *make_contiguous();
 
+static void validate_token_log(const SessionSnapshot &snap) {
+    if (!snap.has_token_log())
+        return;
+
+    const int n_tokens = snap.n_tokens();
+    const int n_layers = snap.n_layers();
+    const int n_heads = snap.n_heads();
+    const int dim = snap.dim();
+
+    if (n_tokens < 0 || n_layers <= 0 || n_heads <= 0 || dim <= 0) {
+        throw std::runtime_error(
+            "ReplayEngine: invalid snapshot dimensions for token log");
+    }
+
+    const size_t expected_entries =
+        static_cast<size_t>(n_tokens) * static_cast<size_t>(n_layers) *
+        static_cast<size_t>(n_heads);
+    const auto &log = snap.token_log();
+
+    if (log.size() != expected_entries) {
+        throw std::runtime_error(
+            "ReplayEngine: incomplete token log (expected " +
+            std::to_string(expected_entries) + " entries, found " +
+            std::to_string(log.size()) + ")");
+    }
+
+    for (size_t i = 0; i < log.size(); ++i) {
+        const SnapshotTokenEntry &entry = log[i];
+        if (entry.layer < 0 || entry.layer >= n_layers ||
+            entry.head < 0 || entry.head >= n_heads || entry.dim != dim ||
+            entry.k_fp32.size() != static_cast<size_t>(dim) ||
+            entry.v_fp32.size() != static_cast<size_t>(dim)) {
+            throw std::runtime_error(
+                "ReplayEngine: invalid token log entry at index " +
+                std::to_string(i));
+        }
+    }
+}
+
 /* =========================================================================
  * Constructor
  * ========================================================================= */
@@ -49,7 +88,11 @@ void ReplayEngine::feed_token(RuntimeContext                         &ctx,
     for (int l = 0; l < n_layers; ++l) {
         for (int h = 0; h < n_heads; ++h) {
             int entry_idx = base_idx + l * n_heads + h;
-            if (entry_idx >= (int)log.size()) return;
+            if (entry_idx >= (int)log.size()) {
+                throw std::runtime_error(
+                    "ReplayEngine: token log ended before token " +
+                    std::to_string(token_idx) + " was fully replayed");
+            }
 
             const SnapshotTokenEntry &e = log[entry_idx];
             ctx.append(l, h, e.k_fp32.data(), e.v_fp32.data());
@@ -76,6 +119,8 @@ ReplayReport ReplayEngine::replay(const SessionSnapshot &snap,
     if (!snap.has_token_log())
         throw std::runtime_error("ReplayEngine::replay: snapshot has no token log. "
                                  "Capture with include_token_log=true.");
+
+    validate_token_log(snap);
 
     ReplayReport report;
     report.collect_metrics = collect_metrics_;
@@ -115,6 +160,8 @@ void ReplayEngine::branch(const SessionSnapshot &snap,
                            int                    from_token) const {
     if (!snap.has_token_log())
         throw std::runtime_error("ReplayEngine::branch: snapshot has no token log.");
+
+    validate_token_log(snap);
 
     if (from_token < 0 || from_token > snap.n_tokens())
         throw std::runtime_error("ReplayEngine::branch: from_token out of range.");
@@ -165,6 +212,8 @@ ReplayReport ReplayEngine::replay_with(const SessionSnapshot      &snap,
                                         const RuntimeContextConfig &cfg) const {
     if (!snap.has_token_log())
         throw std::runtime_error("ReplayEngine::replay_with: snapshot has no token log.");
+
+    validate_token_log(snap);
 
     StrategyFactory sfn = strategy_factory_by_name(strategy_name.c_str());
     if (!sfn)

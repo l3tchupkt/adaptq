@@ -247,3 +247,23 @@ TEST_CASE("SessionSnapshot: load rejects truncated files safely", "[snapshot][se
     fs::remove(path);
     fs::remove(path_trunc);
 }
+
+TEST_CASE("SessionSnapshot: load rejects inconsistent token log count", "[snapshot][security]") {
+    const int token_count = 5;
+    auto ctx = make_ctx_with_tokens(token_count, 64, true);
+    SessionSnapshot orig = SessionSnapshot::capture(*ctx, true);
+
+    std::string path = tmp_path("adaptq_incomplete_token_log.aqss");
+    orig.save(path);
+
+    /* Header offset 24 stores n_tokens. Keep the physical log unchanged but
+     * claim one additional token so the metadata and log entry count diverge. */
+    std::fstream f(path, std::ios::in | std::ios::out | std::ios::binary);
+    f.seekp(24);
+    int32_t inconsistent_token_count = token_count + 1;
+    f.write(reinterpret_cast<const char *>(&inconsistent_token_count), sizeof(inconsistent_token_count));
+    f.close();
+
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
+    fs::remove(path);
+}
