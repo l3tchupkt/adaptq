@@ -145,6 +145,7 @@ public:
     int n_layers()   const { return cfg_.n_layers; }
     int n_heads()    const { return cfg_.n_heads;  }
     int dim()        const { return cfg_.dim;      }
+    int bits()       const { return cfg_.bits;     }
     int token_pos()  const { return token_pos_;    }
 
     IKVStrategy     *get_strategy(int layer, int head) const;

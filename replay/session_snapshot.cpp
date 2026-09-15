@@ -69,7 +69,7 @@ SessionSnapshot SessionSnapshot::capture(const RuntimeContext &ctx,
     snap.n_layers_ = ctx.n_layers();
     snap.n_heads_  = ctx.n_heads();
     snap.dim_      = ctx.dim();
-    snap.bits_     = 4; /* default; exposed via RuntimeContextConfig in V3 */
+    snap.bits_     = ctx.bits();
     snap.n_tokens_ = ctx.token_pos();
     snap.flags_    = 0;
 
