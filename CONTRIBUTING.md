@@ -17,7 +17,7 @@ We actively welcome contributions and improvements in the following areas:
 
 To ensure the library remains stable and efficient, please adhere to the following principles:
 
-1. **Discuss Major Changes:** Please open an issue to discuss proposed algorithm or API changes *before* starting work. Significant architectural deviations without prior discussion may not be accepted.
+1. **Discuss Major Changes:** Please open an issue to discuss proposed algorithm or API changes _before_ starting work. Significant architectural deviations without prior discussion may not be accepted.
 2. **Avoid Unrelated Refactors:** Keep Pull Requests (PRs) narrowly focused on resolving a specific issue or adding a single feature. Do not include cosmetic formatting or unrelated refactoring in feature PRs.
 3. **Prove Your Claims:** If your PR introduces performance optimizations or modifies core algorithms, you **must** include reproducible benchmarks and quantitative evidence supporting your accuracy/performance claims.
 4. **Test Everything:** New features must include comprehensive unit and integration tests. Regressions must include a failing test case that your PR fixes.
@@ -31,6 +31,20 @@ To ensure the library remains stable and efficient, please adhere to the followi
 ## Local Development & Testing
 
 We strongly recommend building and running the complete test suite locally before pushing your changes.
+
+If you are starting from a fresh checkout:
+
+```bash
+git clone https://github.com/l3tchupkt/adaptq.git
+cd adaptq
+```
+
+Install the development dependencies and package in editable mode:
+
+```bash
+pip install build pytest twine
+pip install -e .[dev]
+```
 
 ### 1. Build the C++ Core
 
@@ -64,6 +78,15 @@ python tests/run_tests.py
 
 # Run the complete Pytest suite
 pytest tests integration_tests -m "not gpu_required"
+```
+
+Before submitting a pull request, also run:
+
+```bash
+ruff check . --fix
+cmake --build build --config Release --parallel
+ctest --test-dir build --build-config Release --output-on-failure
+pytest integration_tests/
 ```
 
 ## Security Vulnerabilities
