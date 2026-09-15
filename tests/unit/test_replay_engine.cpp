@@ -225,3 +225,29 @@ TEST_CASE("ReplayEngine: full replay and branch produce same storage at branch p
      * Full ≥ branch (exact ratio depends on capacity evictions). */
     REQUIRE(full_bytes >= branch_bytes);
 }
+
+TEST_CASE("ReplayEngine: replay retains all tokens when capacity is dynamically sized to snapshot length",
+          "[replay][capacity]") {
+    const int N_TOKENS = 64;
+    SessionSnapshot snap = build_snapshot(N_TOKENS, 64);
+
+    RuntimeContextConfig cfg;
+    cfg.n_layers   = snap.n_layers();
+    cfg.n_heads    = snap.n_heads();
+    cfg.dim        = snap.dim();
+    cfg.bits       = snap.bits();
+    cfg.log_tokens = false;
+    cfg.capacity   = 1;
+    cfg.capacity   = std::max(cfg.capacity, snap.n_tokens());
+
+    RuntimeContext ctx;
+    ctx.init(cfg);
+
+    ReplayEngine engine(false);
+    ReplayReport report = engine.replay(snap, ctx);
+
+    REQUIRE(report.n_tokens_replayed == N_TOKENS);
+    auto *storage = ctx.get_storage(0, 0);
+    REQUIRE(storage->bytes_used() > 0);
+    REQUIRE(storage->bytes_used() == storage->bytes_capacity());
+}
