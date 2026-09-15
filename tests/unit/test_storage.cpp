@@ -232,3 +232,16 @@ TEST_CASE("Contract: ContiguousSlabStorage", "[storage][contract]") {
 TEST_CASE("Contract: SegmentedSlabStorage", "[storage][contract]") {
     test_contract<SegmentedSlabStorage>(32, 8);
 }
+TEST_CASE("SegmentedSlabStorage: reinit releases previous slabs", "[storage][segmented]") {
+    SegmentedSlabStorage st;
+    st.init(16, 16);
+    auto d = make_data(8, 0xAA);
+    st.write(d.data(), 8, 1.f, 0x04);
+    REQUIRE(st.bytes_used() == 8);
+    st.init(16, 16);
+    REQUIRE(st.bytes_used() == 0);
+    auto d2 = make_data(8, 0xBB);
+    StorageSlot slot = st.write(d2.data(), 8, 2.f, 0x04);
+    REQUIRE(st.bytes_used() == 8);
+    REQUIRE(st.read(slot).data[0] == 0xBB);
+}
