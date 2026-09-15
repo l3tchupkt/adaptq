@@ -14,6 +14,8 @@ template <class T, size_t Align = 64> struct AlignedAllocator {
     void *p = nullptr;
 #if defined(_MSC_VER)
     p = _aligned_malloc(bytes, Align);
+    if (!p)
+      throw std::bad_alloc();
 #else
     if (posix_memalign(&p, Align, bytes) != 0)
       throw std::bad_alloc();
