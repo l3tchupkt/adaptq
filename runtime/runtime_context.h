@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 #include "../include/adaptq/config.h"
 #include "../include/adaptq/context.h"
@@ -166,6 +167,8 @@ private:
 
     /* Index into flat strategy/storage vectors. */
     int head_idx(int layer, int head) const {
+        if (layer < 0 || layer >= cfg_.n_layers || head < 0 || head >= cfg_.n_heads)
+            throw std::out_of_range("RuntimeContext: layer or head index out of range");
         return layer * cfg_.n_heads + head;
     }
 

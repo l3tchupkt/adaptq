@@ -64,6 +64,14 @@ TEST_CASE("RuntimeContext: get_strategy / get_storage return non-null", "[runtim
     }
 }
 
+TEST_CASE("RuntimeContext: rejects invalid layer and head indices", "[runtime][security]") {
+    RuntimeContext ctx;
+    ctx.init(make_cfg(2, 2));
+    REQUIRE_THROWS_AS(ctx.get_strategy(-1, 0), std::out_of_range);
+    REQUIRE_THROWS_AS(ctx.get_storage(0, 2), std::out_of_range);
+    REQUIRE_THROWS_AS(ctx.compute(2, 0, nullptr, nullptr), std::out_of_range);
+}
+
 TEST_CASE("RuntimeContext: append increases storage usage", "[runtime]") {
     RuntimeContextConfig cfg = make_cfg(1, 1, 64, 4, 32);
     RuntimeContext ctx;
