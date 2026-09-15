@@ -76,6 +76,10 @@ ReplayReport ReplayEngine::replay(const SessionSnapshot &snap,
     if (!snap.has_token_log())
         throw std::runtime_error("ReplayEngine::replay: snapshot has no token log. "
                                  "Capture with include_token_log=true.");
+    if (ctx.n_layers() != snap.n_layers() || ctx.n_heads() != snap.n_heads() ||
+        ctx.dim() != snap.dim()) {
+        throw std::invalid_argument("ReplayEngine::replay: context shape does not match snapshot");
+    }
 
     ReplayReport report;
     report.collect_metrics = collect_metrics_;
@@ -115,6 +119,10 @@ void ReplayEngine::branch(const SessionSnapshot &snap,
                            int                    from_token) const {
     if (!snap.has_token_log())
         throw std::runtime_error("ReplayEngine::branch: snapshot has no token log.");
+    if (ctx.n_layers() != snap.n_layers() || ctx.n_heads() != snap.n_heads() ||
+        ctx.dim() != snap.dim()) {
+        throw std::invalid_argument("ReplayEngine::branch: context shape does not match snapshot");
+    }
 
     if (from_token < 0 || from_token > snap.n_tokens())
         throw std::runtime_error("ReplayEngine::branch: from_token out of range.");

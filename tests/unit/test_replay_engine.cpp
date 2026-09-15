@@ -72,6 +72,16 @@ TEST_CASE("ReplayEngine: full replay completes without error", "[replay]") {
     REQUIRE(report.wall_time_ms >= 0.0);
 }
 
+TEST_CASE("ReplayEngine: rejects incompatible context shape", "[replay][security]") {
+    SessionSnapshot snap = build_snapshot(4, 64);
+    RuntimeContextConfig cfg = make_cfg(4, 32);
+    cfg.log_tokens = false;
+    RuntimeContext ctx;
+    ctx.init(cfg);
+    ReplayEngine engine(false);
+    REQUIRE_THROWS_AS(engine.replay(snap, ctx), std::invalid_argument);
+}
+
 TEST_CASE("ReplayEngine: full replay produces non-empty report", "[replay]") {
     SessionSnapshot snap = build_snapshot(15);
 
