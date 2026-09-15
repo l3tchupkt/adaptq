@@ -32,6 +32,10 @@ static void rand_vec(float *v, int d, unsigned seed) {
     for (int i = 0; i < d; ++i) v[i] /= n;
 }
 
+static void write_i32(std::ostream &out, int32_t v) {
+    out.write(reinterpret_cast<const char *>(&v), sizeof(v));
+}
+
 /* Returns a heap-allocated RuntimeContext (non-copyable, so use unique_ptr). */
 static std::unique_ptr<RuntimeContext> make_ctx_with_tokens(int n_tokens,
                                                              int dim = 64,
@@ -155,6 +159,7 @@ TEST_CASE("SessionSnapshot: load rejects truncated file", "[snapshot]") {
     REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
     fs::remove(path);
 }
+
 TEST_CASE("SessionSnapshot: load missing file throws", "[snapshot]") {
     REQUIRE_THROWS_AS(SessionSnapshot::load("/nonexistent/path/adaptq.aqss"),
                       std::runtime_error);
@@ -205,7 +210,6 @@ TEST_CASE("SessionSnapshot: save/load is deterministic for same input", "[snapsh
     fs::remove(p2);
 }
 
-
 TEST_CASE("SessionSnapshot: load rejects malicious allocation sizes", "[snapshot][security]") {
     std::string path = tmp_path("adaptq_malicious_alloc.aqss");
     auto ctx = make_ctx_with_tokens(2, 64, false);
@@ -228,6 +232,7 @@ TEST_CASE("SessionSnapshot: load rejects malicious allocation sizes", "[snapshot
     REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
     fs::remove(path);
 }
+
 TEST_CASE("SessionSnapshot: load rejects truncated files safely", "[snapshot][security]") {
     std::string path = tmp_path("adaptq_truncated_2.aqss");
     auto ctx = make_ctx_with_tokens(5, 64, true);
@@ -246,4 +251,173 @@ TEST_CASE("SessionSnapshot: load rejects truncated files safely", "[snapshot][se
     REQUIRE_THROWS_AS(SessionSnapshot::load(path_trunc), std::runtime_error);
     fs::remove(path);
     fs::remove(path_trunc);
+}
+
+TEST_CASE("SessionSnapshot: load rejects scale allocation larger than remaining data", "[snapshot][security]") {
+    std::string path = tmp_path("adaptq_bad_scales.aqss");
+    auto ctx = make_ctx_with_tokens(0, 64, false);
+    SessionSnapshot orig = SessionSnapshot::capture(*ctx, false);
+    orig.save(path);
+
+    std::fstream f(path, std::ios::in | std::ios::out | std::ios::binary);
+    f.seekp(64);
+    int32_t bad_scales = 1000000000;
+    f.write(reinterpret_cast<const char *>(&bad_scales), sizeof(bad_scales));
+    f.close();
+
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
+    fs::remove(path);
+}
+
+TEST_CASE("SessionSnapshot: load rejects tag allocation larger than remaining data", "[snapshot][security]") {
+    std::string path = tmp_path("adaptq_bad_tags.aqss");
+    auto ctx = make_ctx_with_tokens(0, 64, false);
+    SessionSnapshot orig = SessionSnapshot::capture(*ctx, false);
+    orig.save(path);
+
+    std::fstream f(path, std::ios::in | std::ios::out | std::ios::binary);
+    f.seekp(68);
+    int32_t bad_tags = 1000000000;
+    f.write(reinterpret_cast<const char *>(&bad_tags), sizeof(bad_tags));
+    f.close();
+
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
+    fs::remove(path);
+}
+
+TEST_CASE("SessionSnapshot: load rejects strategy state allocation larger than remaining data", "[snapshot][security]") {
+    std::string path = tmp_path("adaptq_bad_strategy_state.aqss");
+    auto ctx = make_ctx_with_tokens(0, 64, true);
+    SessionSnapshot orig = SessionSnapshot::capture(*ctx, true);
+    orig.save(path);
+
+    std::fstream f(path, std::ios::in | std::ios::out | std::ios::binary);
+    f.seekp(72);
+    int32_t bad_state = 1000000000;
+    f.write(reinterpret_cast<const char *>(&bad_state), sizeof(bad_state));
+    f.close();
+
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
+    fs::remove(path);
+}
+
+TEST_CASE("SessionSnapshot: load rejects token log allocation larger than remaining data", "[snapshot][security]") {
+    std::string path = tmp_path("adaptq_bad_token_count.aqss");
+    {
+        std::ofstream f(path, std::ios::binary);
+        const uint32_t magic = SessionSnapshot::kMagic;
+        const uint32_t version = SessionSnapshot::kVersion;
+        f.write(reinterpret_cast<const char *>(&magic), 4);
+        f.write(reinterpret_cast<const char *>(&version), 4);
+        write_i32(f, 1);  // n_layers
+        write_i32(f, 1);  // n_heads
+        write_i32(f, 64); // dim
+        write_i32(f, 4);  // bits
+        write_i32(f, 0);  // n_tokens
+        write_i32(f, 1);  // n_heads_total
+        uint64_t flags = 1;
+        f.write(reinterpret_cast<const char *>(&flags), sizeof(flags));
+
+        write_i32(f, 0); // layer
+        write_i32(f, 0); // head
+        write_i32(f, 0); // cache_size
+        write_i32(f, 0); // slot_bytes
+        uint64_t data_bytes = 0;
+        f.write(reinterpret_cast<const char *>(&data_bytes), sizeof(data_bytes));
+        write_i32(f, 0); // n_scales
+        write_i32(f, 0); // n_tags
+        write_i32(f, 1000000000); // n_entries
+    }
+
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
+    fs::remove(path);
+}
+
+TEST_CASE("SessionSnapshot: load rejects token vector allocation larger than remaining data", "[snapshot][security]") {
+    std::string path = tmp_path("adaptq_bad_token_dim.aqss");
+    {
+        std::ofstream f(path, std::ios::binary);
+        const uint32_t magic = SessionSnapshot::kMagic;
+        const uint32_t version = SessionSnapshot::kVersion;
+        f.write(reinterpret_cast<const char *>(&magic), 4);
+        f.write(reinterpret_cast<const char *>(&version), 4);
+        write_i32(f, 1);  // n_layers
+        write_i32(f, 1);  // n_heads
+        write_i32(f, 64); // dim
+        write_i32(f, 4);  // bits
+        write_i32(f, 0);  // n_tokens
+        write_i32(f, 1);  // n_heads_total
+        uint64_t flags = 1;
+        f.write(reinterpret_cast<const char *>(&flags), sizeof(flags));
+
+        write_i32(f, 0); // layer
+        write_i32(f, 0); // head
+        write_i32(f, 0); // cache_size
+        write_i32(f, 0); // slot_bytes
+        uint64_t data_bytes = 0;
+        f.write(reinterpret_cast<const char *>(&data_bytes), sizeof(data_bytes));
+        write_i32(f, 0); // n_scales
+        write_i32(f, 0); // n_tags
+        write_i32(f, 1); // n_entries
+        write_i32(f, 0); // layer
+        write_i32(f, 0); // head
+        write_i32(f, 1000000000); // dim
+    }
+
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
+    fs::remove(path);
+}
+
+TEST_CASE("SessionSnapshot: load rejects excessive head metadata allocation", "[snapshot][security]") {
+    std::string path = tmp_path("adaptq_excessive_head_metadata.aqss");
+    {
+        std::ofstream f(path, std::ios::binary);
+        const uint32_t magic = SessionSnapshot::kMagic;
+        const uint32_t version = SessionSnapshot::kVersion;
+        f.write(reinterpret_cast<const char *>(&magic), 4);
+        f.write(reinterpret_cast<const char *>(&version), 4);
+        write_i32(f, 50000);       // n_layers
+        write_i32(f, 40000);       // n_heads
+        write_i32(f, 64);          // dim
+        write_i32(f, 4);           // bits
+        write_i32(f, 0);           // n_tokens
+        write_i32(f, 2000000000);  // n_heads_total
+        uint64_t flags = 0;
+        f.write(reinterpret_cast<const char *>(&flags), sizeof(flags));
+    }
+
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
+    fs::remove(path);
+}
+
+TEST_CASE("SessionSnapshot: load rejects excessive token log metadata allocation", "[snapshot][security]") {
+    std::string path = tmp_path("adaptq_excessive_token_metadata.aqss");
+    {
+        std::ofstream f(path, std::ios::binary);
+        const uint32_t magic = SessionSnapshot::kMagic;
+        const uint32_t version = SessionSnapshot::kVersion;
+        f.write(reinterpret_cast<const char *>(&magic), 4);
+        f.write(reinterpret_cast<const char *>(&version), 4);
+        write_i32(f, 1);          // n_layers
+        write_i32(f, 1);          // n_heads
+        write_i32(f, 64);         // dim
+        write_i32(f, 4);          // bits
+        write_i32(f, 0);          // n_tokens
+        write_i32(f, 1);          // n_heads_total
+        uint64_t flags = 1;
+        f.write(reinterpret_cast<const char *>(&flags), sizeof(flags));
+
+        write_i32(f, 0);          // layer
+        write_i32(f, 0);          // head
+        write_i32(f, 0);          // cache_size
+        write_i32(f, 0);          // slot_bytes
+        uint64_t data_bytes = 0;
+        f.write(reinterpret_cast<const char *>(&data_bytes), sizeof(data_bytes));
+        write_i32(f, 0);          // n_scales
+        write_i32(f, 0);          // n_tags
+        write_i32(f, 2000000000);  // n_entries
+    }
+
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
+    fs::remove(path);
 }
