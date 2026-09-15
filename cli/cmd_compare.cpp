@@ -178,6 +178,12 @@ int cmd_compare(int argc, char **argv) {
         }
     }
 
+
+    if (format != "json" && format != "csv" && format != "md" && format != "tex") {
+        std::cerr << "ERROR: unsupported output format '" << format
+                  << "' (expected json, csv, md, or tex)\n";
+        return 1;
+    }
     if (strategies_arg.empty()) {
         std::cerr << "ERROR: --strategies is required. Example: --strategies har_fixed,fp_passthrough\n";
         return 1;
