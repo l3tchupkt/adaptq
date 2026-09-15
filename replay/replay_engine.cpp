@@ -13,6 +13,26 @@
 
 namespace adaptq {
 
+static void validate_token_log(const SessionSnapshot &snap) {
+    if (snap.n_tokens() < 0 || snap.n_layers() <= 0 || snap.n_heads() <= 0 || snap.dim() <= 0)
+        throw std::runtime_error("ReplayEngine: snapshot dimensions are invalid");
+    const size_t stride = static_cast<size_t>(snap.n_layers()) * snap.n_heads();
+    const size_t expected = static_cast<size_t>(snap.n_tokens()) * stride;
+    const auto &log = snap.token_log();
+    if (log.size() != expected)
+        throw std::runtime_error("ReplayEngine: snapshot token log is incomplete");
+    for (size_t i = 0; i < log.size(); ++i) {
+        const auto &entry = log[i];
+        const size_t offset = i % stride;
+        const int layer = static_cast<int>(offset / snap.n_heads());
+        const int head = static_cast<int>(offset % snap.n_heads());
+        if (entry.layer != layer || entry.head != head || entry.dim != snap.dim() ||
+            entry.k_fp32.size() != static_cast<size_t>(snap.dim()) ||
+            entry.v_fp32.size() != static_cast<size_t>(snap.dim()))
+            throw std::runtime_error("ReplayEngine: snapshot token log is malformed");
+    }
+}
+
 /* These symbols are defined in runtime_context.cpp (same link unit). */
 extern StrategyFactory strategy_factory_by_name(const char *name);
 extern IStorageBackend *make_contiguous();
@@ -76,6 +96,7 @@ ReplayReport ReplayEngine::replay(const SessionSnapshot &snap,
     if (!snap.has_token_log())
         throw std::runtime_error("ReplayEngine::replay: snapshot has no token log. "
                                  "Capture with include_token_log=true.");
+    validate_token_log(snap);
 
     ReplayReport report;
     report.collect_metrics = collect_metrics_;
@@ -115,6 +136,7 @@ void ReplayEngine::branch(const SessionSnapshot &snap,
                            int                    from_token) const {
     if (!snap.has_token_log())
         throw std::runtime_error("ReplayEngine::branch: snapshot has no token log.");
+    validate_token_log(snap);
 
     if (from_token < 0 || from_token > snap.n_tokens())
         throw std::runtime_error("ReplayEngine::branch: from_token out of range.");
@@ -165,6 +187,7 @@ ReplayReport ReplayEngine::replay_with(const SessionSnapshot      &snap,
                                         const RuntimeContextConfig &cfg) const {
     if (!snap.has_token_log())
         throw std::runtime_error("ReplayEngine::replay_with: snapshot has no token log.");
+    validate_token_log(snap);
 
     StrategyFactory sfn = strategy_factory_by_name(strategy_name.c_str());
     if (!sfn)
