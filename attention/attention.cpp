@@ -12,7 +12,8 @@
 #  define ADAPTQ_PREFETCH(ptr) __builtin_prefetch((ptr), 0, 1)
 #endif
 
-#if defined(__GNUC__) || defined(__clang__)
+#if (defined(__GNUC__) || defined(__clang__)) && \
+    (defined(__x86_64__) || defined(__i386__))
 #pragma GCC push_options
 #pragma GCC target("avx2,fma")
 #define ADAPTQ_HAS_AVX2 1
