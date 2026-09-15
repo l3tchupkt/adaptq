@@ -93,6 +93,7 @@ TEST_CASE("adaptq_reset zeroes cache", "[api]") {
 TEST_CASE("adaptq_create with invalid parameters returns null", "[api][security]") {
     REQUIRE(adaptq_create(0, 4, 1024, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(-1, 4, 1024, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(128, 4, 0, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 0, 1024, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 4, -1, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 4, 1024, 42, 0.f, -100) == nullptr);
@@ -192,6 +193,7 @@ TEST_CASE("adaptq_mha_reset clears all heads", "[api][mha]") {
 TEST_CASE("adaptq_mha_create with invalid parameters returns null", "[api][mha][security]") {
     REQUIRE(adaptq_mha_create(0, 128, 4, 1024, 0, 0.f, 0) == nullptr);
     REQUIRE(adaptq_mha_create(-1, 128, 4, 1024, 0, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_mha_create(4, 128, 4, 0, 0, 0.f, 0) == nullptr);
     REQUIRE(adaptq_mha_create(4, 0, 4, 1024, 0, 0.f, 0) == nullptr);
     REQUIRE(adaptq_mha_create(4, 128, -1, 1024, 0, 0.f, 0) == nullptr);
     REQUIRE(std::string(adaptq_last_error()).size() > 0);
