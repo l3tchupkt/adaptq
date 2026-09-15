@@ -89,11 +89,10 @@ SessionSnapshot SessionSnapshot::capture(const RuntimeContext &ctx,
              * ContiguousSlabStorage if available; otherwise fall back. */
             auto *csb = dynamic_cast<ContiguousSlabStorage *>(st);
             if (!csb) {
-                /* Generic backend — record empty snapshot. */
-                hs.cache_size = 0;
-                hs.slot_bytes = 0;
-                snap.heads_.push_back(std::move(hs));
-                continue;
+                throw std::runtime_error(
+                    "SessionSnapshot::capture: storage backend '" +
+                    std::string(st ? st->name() : "null") +
+                    "' does not support snapshot capture");
             }
 
             int cache_sz   = csb->size() / 2;  /* size() = K+V slots; pairs = size/2 */
