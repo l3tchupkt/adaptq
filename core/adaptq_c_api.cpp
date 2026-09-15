@@ -163,7 +163,7 @@ adaptq_mha_t adaptq_mha_create(int n_heads, int dim, int bits, int capacity,
   }
   auto *mha = new (std::nothrow) AdapTQMHA();
   if (!mha) {
-    set_error(ADAPTQ_ERR_ALLOC_FAILED, "adaptq_mha_create: allocation failed");
+    set_error(ADAPTQ_ERR_ALLOC, "adaptq_mha_create: allocation failed");
     return nullptr;
   }
   mha->n_heads = n_heads;
@@ -179,7 +179,7 @@ adaptq_mha_t adaptq_mha_create(int n_heads, int dim, int bits, int capacity,
         }
       }
       delete mha;
-      set_error(ADAPTQ_ERR_ALLOC_FAILED, "adaptq_mha_create: head allocation failed");
+      set_error(ADAPTQ_ERR_ALLOC, "adaptq_mha_create: head allocation failed");
       return nullptr;
     }
   }
