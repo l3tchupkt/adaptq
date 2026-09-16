@@ -133,6 +133,9 @@ def test_snapshot_info_reads_header_without_replay(monkeypatch, tmp_path):
         "n_layers": 2,
         "n_heads": 4,
         "dim": 128,
+        "bits": 4,
+        "version": replay_api._SNAPSHOT_VERSION,
+        "file_size_bytes": snapshot.stat().st_size,
         "has_token_log": True,
         "has_strategy_state": True,
     }
