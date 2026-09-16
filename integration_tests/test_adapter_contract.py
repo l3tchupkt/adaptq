@@ -135,6 +135,15 @@ def test_last_error_returns_string(backend):
     assert isinstance(err, str)
 
 
+@pytest.mark.parametrize("backend", list_available_backends())
+def test_generation_result_returns_result_object(backend):
+    """generation_result() returns a GenerationResult before and after generation."""
+    adapter = create_adapter(backend)
+    res = adapter.generation_result()
+    assert isinstance(res, GenerationResult)
+    assert res.n_generated_tokens == 0
+
+
 # ── Dataclass contracts ───────────────────────────────────────────────────
 
 def test_model_config_defaults():

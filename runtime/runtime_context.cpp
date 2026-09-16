@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 
 /* -------------------------------------------------------------------------
@@ -69,6 +70,9 @@ const char **strategy_names(int *out_count) {
  * ========================================================================= */
 
 static int next_pow2_rt(int n) {
+    if (n <= 1) return 1;
+    if (n > (1 << 30)) return 1 << 30;
+
     int p = 1;
     while (p < n) p <<= 1;
     return p;
@@ -85,6 +89,13 @@ void RuntimeContext::init(const RuntimeContextConfig &cfg) {
 void RuntimeContext::init(const RuntimeContextConfig &cfg,
                           StrategyFactory             strategy_fn,
                           StorageFactory              storage_fn) {
+    if (cfg.n_layers <= 0 || cfg.n_heads <= 0 || cfg.dim <= 0 ||
+        cfg.bits < 2 || cfg.bits > 4 || cfg.capacity <= 0 ||
+        cfg.dim > (1 << 30) ||
+        cfg.n_layers > std::numeric_limits<int>::max() / cfg.n_heads ||
+        !strategy_fn || !storage_fn) {
+        throw std::invalid_argument("RuntimeContext::init: invalid configuration");
+    }
     cfg_      = cfg;
     token_pos_ = 0;
     token_log_.clear();
@@ -433,3 +444,6 @@ ComputeMetrics RuntimeContext::compute(int          layer,
 }
 
 } /* namespace adaptq */
+
+
+

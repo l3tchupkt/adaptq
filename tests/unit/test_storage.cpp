@@ -201,6 +201,32 @@ TEST_CASE("SegmentedSlabStorage: reinitialization safely frees previous slabs", 
     REQUIRE(st.bytes_used() == 16);
 }
 
+TEST_CASE("SegmentedSlabStorage: capacity boundaries and out-of-bounds guards", "[storage][segmented]") {
+    SegmentedSlabStorage st;
+    // Reject non-positive capacity or oversized capacity > 65536
+    REQUIRE_THROWS_AS(st.init(0, 8), std::invalid_argument);
+    REQUIRE_THROWS_AS(st.init(-1, 8), std::invalid_argument);
+    REQUIRE_THROWS_AS(st.init(65537, 8), std::invalid_argument);
+    REQUIRE_THROWS_AS(st.init(8, 0), std::invalid_argument);
+
+    // Valid init
+    st.init(4, 8);
+    auto d = make_data(8, 0x42);
+    StorageSlot slot = st.write(d.data(), 8, 1.f, 0x01);
+
+    // Safe read on out-of-bounds slot
+    CompressResult r_bad = st.read((StorageSlot)999999);
+    REQUIRE(r_bad.data == nullptr);
+
+    // Safe free on invalid slot
+    st.free_slot((StorageSlot)999999);
+    REQUIRE(st.bytes_used() == 8);
+
+    CompressResult r_good = st.read(slot);
+    REQUIRE(r_good.data != nullptr);
+    REQUIRE(r_good.data[0] == 0x42);
+}
+
 /* ======================================================================
  * IStorageBackend contract template
  * ==================================================================== */
@@ -231,4 +257,17 @@ TEST_CASE("Contract: ContiguousSlabStorage", "[storage][contract]") {
 }
 TEST_CASE("Contract: SegmentedSlabStorage", "[storage][contract]") {
     test_contract<SegmentedSlabStorage>(32, 8);
+}
+TEST_CASE("SegmentedSlabStorage: reinit releases previous slabs", "[storage][segmented]") {
+    SegmentedSlabStorage st;
+    st.init(16, 16);
+    auto d = make_data(8, 0xAA);
+    st.write(d.data(), 8, 1.f, 0x04);
+    REQUIRE(st.bytes_used() == 8);
+    st.init(16, 16);
+    REQUIRE(st.bytes_used() == 0);
+    auto d2 = make_data(8, 0xBB);
+    StorageSlot slot = st.write(d2.data(), 8, 2.f, 0x04);
+    REQUIRE(st.bytes_used() == 8);
+    REQUIRE(st.read(slot).data[0] == 0xBB);
 }

@@ -97,6 +97,15 @@ def test_replay_rejects_unsupported_output_format(monkeypatch, output_format):
         )
 
 
+def test_replay_rejects_negative_branch_token(monkeypatch):
+    monkeypatch.setattr(replay_api, "_get_binary", lambda: (_ for _ in ()).throw(
+        AssertionError("negative branch must fail before CLI lookup")
+    ))
+
+    with pytest.raises(ValueError, match="from_token must be non-negative"):
+        replay_api.ReplayEngine().replay("session.aqss", from_token=-1)
+
+
 def test_snapshot_info_reads_header_without_replay(monkeypatch, tmp_path):
     snapshot = tmp_path / "session.aqss"
     flags = 1 | 2

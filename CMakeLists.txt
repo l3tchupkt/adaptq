@@ -43,15 +43,21 @@ target_include_directories(adapTQ_core_obj PUBLIC
 if(MSVC)
   target_compile_options(adapTQ_core_obj PRIVATE /openmp)
 else()
-  target_compile_options(adapTQ_core_obj PRIVATE -fopenmp)
-  target_link_options(adapTQ_core_obj PUBLIC -fopenmp)
+  # AppleClang ships without OpenMP; the only OpenMP use is an optional
+  # `#pragma omp parallel for`, so build without it when it is unavailable.
+  find_package(OpenMP COMPONENTS CXX)
+  if(OpenMP_CXX_FOUND)
+    target_link_libraries(adapTQ_core_obj PUBLIC OpenMP::OpenMP_CXX)
+  else()
+    message(STATUS "OpenMP not found - building without OpenMP parallelism")
+  endif()
 endif()
 set_target_properties(adapTQ_core_obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(adapTQ_core STATIC $<TARGET_OBJECTS:adapTQ_core_obj>)
 target_include_directories(adapTQ_core PUBLIC $<TARGET_PROPERTY:adapTQ_core_obj,INCLUDE_DIRECTORIES>)
-if(NOT MSVC)
-  target_link_options(adapTQ_core PUBLIC -fopenmp)
+if(NOT MSVC AND OpenMP_CXX_FOUND)
+  target_link_libraries(adapTQ_core PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -62,9 +68,11 @@ target_include_directories(adapTQ_avx2_obj PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/kernels
 )
+# -mavx2/-mfma are x86-only; on other targets kdot_avx2.cpp compiles its
+# !__AVX2__ branch and the selector falls back to the scalar backend.
 if(MSVC)
   target_compile_options(adapTQ_avx2_obj PRIVATE /arch:AVX2)
-else()
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i[3-6]86|x86)$")
   target_compile_options(adapTQ_avx2_obj PRIVATE -mavx2 -mfma)
 endif()
 set_target_properties(adapTQ_avx2_obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -127,7 +135,9 @@ set_target_properties(adaptq_shared PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 if(NOT MSVC)
-  target_link_options(adaptq_shared PRIVATE -fopenmp)
+  if(OpenMP_CXX_FOUND)
+    target_link_libraries(adaptq_shared PRIVATE OpenMP::OpenMP_CXX)
+  endif()
   target_link_libraries(adaptq_shared PRIVATE m)
 endif()
 

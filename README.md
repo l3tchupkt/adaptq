@@ -25,6 +25,21 @@
 
 It runs entirely on the CPU, requires **no model changes**, and fits seamlessly into existing inference pipelines (Hugging Face Transformers, llama.cpp, Ollama) with minimal wrapper logic. By leveraging Fast Walsh-Hadamard Transforms (FWHT) and branchless SIMD optimizations, AdapTQ achieves **4–8× KV memory reduction** while matching or exceeding FP16 attention throughput at large context lengths.
 
+## 📑 Table of Contents
+
+- [✨ Key Features](#-key-features)
+- [🚀 Quick Start](#-quick-start)
+- [📊 Performance & Architecture](#-performance--architecture)
+- [⏪ Replay & Compare CLI (V2)](#-replay--compare-cli-v2)
+- [🛠️ Build from Source](#️-build-from-source)
+- [📚 Project Structure](#-project-structure)
+- [❓ FAQ & Troubleshooting](#-faq--troubleshooting)
+- [🤝 Contributing](#-contributing)
+- [📜 Citation](#-citation)
+- [📄 License](#-license)
+
+---
+
 ## ✨ Key Features
 
 - **Extreme Memory Compression**: 4–8× smaller KV cache footprints via 2-bit, 3-bit, and 4-bit Max-Lloyd quantization.

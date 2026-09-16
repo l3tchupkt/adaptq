@@ -146,6 +146,7 @@ class IRuntimeAdapter(ABC):
         cfg.max_new_tokens = max_new_tokens
 
         result = GenerationResult()
+        self._last_result = result
         t0 = time.perf_counter()
 
         # Session setup
@@ -206,40 +207,75 @@ class IRuntimeAdapter(ABC):
     ) -> Iterator[str]:
         """
         Streaming generation — yields decoded text chunks as they are produced.
+        Populates generation_result() upon generator completion or early exit.
 
         Usage:
             for chunk in adapter.generate_streaming("Hello"):
                 print(chunk, end="", flush=True)
+            res = adapter.generation_result()
+            print(res.summary())
         """
         cfg = session_cfg or SessionConfig(
             prompt=prompt,
             max_new_tokens=max_new_tokens,
+            log_tokens=True,
         )
         cfg.prompt = prompt
         cfg.max_new_tokens = max_new_tokens
 
+        result = GenerationResult()
+        self._last_result = result
+        t0 = time.perf_counter()
+
         if not self.begin_session(cfg):
+            result.error = f"begin_session failed: {self.last_error()}"
             return
+
+        generated: List[int] = []
+        text_chunks: List[str] = []
 
         try:
             try:
                 prompt_tokens = self.tokenize(prompt)
             except NotImplementedError:
                 prompt_tokens = []
+            result.n_prompt_tokens = len(prompt_tokens)
 
-            if prompt_tokens:
-                self.prefill(prompt_tokens)
+            if prompt_tokens and not self.prefill(prompt_tokens):
+                result.error = f"prefill failed: {self.last_error()}"
+                return
 
             for _ in range(max_new_tokens):
                 tok = self.decode_next()
                 if tok is None:
                     break
+                generated.append(tok)
                 try:
-                    yield self.detokenize([tok])
+                    chunk = self.detokenize([tok])
                 except NotImplementedError:
-                    yield f"<{tok}>"
+                    chunk = f"<{tok}>"
+                text_chunks.append(chunk)
+                yield chunk
+
         finally:
             self.end_session()
+            t1 = time.perf_counter()
+            result.token_ids = generated
+            result.n_generated_tokens = len(generated)
+            try:
+                result.text = self.detokenize(generated)
+            except (NotImplementedError, Exception):
+                result.text = "".join(text_chunks)
+            result.kv_stats = self.get_kv_stats()
+            result.wall_time_ms = (t1 - t0) * 1000.0
+            if result.wall_time_ms > 0:
+                result.tokens_per_sec = result.n_generated_tokens / (result.wall_time_ms / 1000.0)
+
+    def generation_result(self) -> GenerationResult:
+        """
+        Return the result from the most recent generate() or generate_streaming() call.
+        """
+        return getattr(self, "_last_result", GenerationResult())
 
     def __repr__(self) -> str:
         try:

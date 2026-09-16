@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstring>
 #include <random>
+#include <stdexcept>
 #include <vector>
 
 /* -------------------------------------------------------------------------
@@ -97,6 +98,18 @@ TEST_CASE("FWHT round-trip MSE < 1e-10 for common head dims", "[fwht]") {
 TEST_CASE("FWHT round-trip for non-power-of-2 dims (padding path)", "[fwht]") {
     for (int dim : {3, 5, 7, 10, 15, 33, 100, 200}) {
         check_roundtrip(dim, 99ULL, 0xCAFE);
+    }
+}
+
+TEST_CASE("FWHT accepts D sized to d for non-power-of-2 dimensions", "[fwht][safety]") {
+    for (int dim : {3, 5, 7, 10, 15, 33, 96, 100, 160, 192, 200}) {
+        std::vector<int8_t> D(dim);
+        gen_rademacher(D.data(), dim, 0xCAFE);
+
+        auto x = random_vec(dim, 99ULL);
+        fwht_forward(x.data(), D.data(), dim);
+        for (float value : x)
+            REQUIRE(std::isfinite(value));
     }
 }
 

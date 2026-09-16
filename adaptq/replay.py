@@ -300,6 +300,8 @@ class ReplayEngine:
         -------
         ReplayResult
         """
+        if from_token is not None and from_token < 0:
+            raise ValueError("from_token must be non-negative or None")
         _validate_output_format(output_format)
         binary = _get_binary()
         cmd = [binary, "replay", str(snapshot_path)]

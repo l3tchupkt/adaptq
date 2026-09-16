@@ -5,7 +5,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <memory>
+#include <new>
 #include <vector>
 
 /* -----------------------------------------------------------------------
@@ -70,11 +72,26 @@ adaptq_ctx_t adaptq_create(int dim, int bits, int capacity, uint64_t seed,
     set_error(ADAPTQ_ERR_INVALID_ARG, "adaptq_create: bits must be 2, 3, or 4");
     return nullptr;
   }
-  auto *ctx = new AdapTQCtx();
-  ctx->dim = dim;
-  ctx->hybrid_thresh = hybrid_thresh;
-  ctx->head.init(dim, bits, capacity, seed, v_mass);
-  return ctx;
+
+  try {
+    auto ctx = std::make_unique<AdapTQCtx>();
+    ctx->dim = dim;
+    ctx->hybrid_thresh = hybrid_thresh;
+    ctx->head.init(dim, bits, capacity, seed, v_mass);
+    return ctx.release();
+  } catch (const std::bad_alloc &) {
+    set_error(ADAPTQ_ERR_ALLOC, "adaptq_create: memory allocation failed");
+    return nullptr;
+  } catch (const std::exception &e) {
+    char message[256];
+    snprintf(message, sizeof(message), "adaptq_create: %s", e.what());
+    set_error(ADAPTQ_ERR_INVALID_ARG, message);
+    return nullptr;
+  } catch (...) {
+    set_error(ADAPTQ_ERR_INVALID_ARG,
+              "adaptq_create: unknown initialization failure");
+    return nullptr;
+  }
 }
 
 void adaptq_destroy(adaptq_ctx_t h) {

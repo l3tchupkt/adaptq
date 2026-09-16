@@ -52,6 +52,17 @@ TEST_CASE("RuntimeContext: init does not throw", "[runtime]") {
     REQUIRE_NOTHROW(ctx.init(cfg));
 }
 
+TEST_CASE("RuntimeContext: rejects invalid configuration before allocation", "[runtime][security]") {
+    RuntimeContext ctx;
+    for (RuntimeContextConfig cfg : {
+        make_cfg(0, 1), make_cfg(1, 0), make_cfg(1, 1, 0),
+        make_cfg(1, 1, 64, 1), make_cfg(1, 1, 64, 5),
+        make_cfg(1, 1, 64, 4, 0)
+    }) {
+        REQUIRE_THROWS_AS(ctx.init(cfg), std::invalid_argument);
+    }
+}
+
 TEST_CASE("RuntimeContext: get_strategy / get_storage return non-null", "[runtime]") {
     RuntimeContextConfig cfg = make_cfg(2, 4, 128, 4, 64);
     RuntimeContext ctx;
@@ -62,6 +73,14 @@ TEST_CASE("RuntimeContext: get_strategy / get_storage return non-null", "[runtim
             REQUIRE(ctx.get_storage(l, h)  != nullptr);
         }
     }
+}
+
+TEST_CASE("RuntimeContext: rejects invalid layer and head indices", "[runtime][security]") {
+    RuntimeContext ctx;
+    ctx.init(make_cfg(2, 2));
+    REQUIRE_THROWS_AS(ctx.get_strategy(-1, 0), std::out_of_range);
+    REQUIRE_THROWS_AS(ctx.get_storage(0, 2), std::out_of_range);
+    REQUIRE_THROWS_AS(ctx.compute(2, 0, nullptr, nullptr), std::out_of_range);
 }
 
 TEST_CASE("RuntimeContext: append increases storage usage", "[runtime]") {

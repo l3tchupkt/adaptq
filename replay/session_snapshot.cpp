@@ -4,6 +4,7 @@
 #include "../include/adaptq/strategy.h"
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 
@@ -57,6 +58,46 @@ static void read_bytes(std::istream &in, void *p, size_t n) {
         throw std::runtime_error("SessionSnapshot::load: truncated snapshot");
 }
 
+static uint64_t remaining_bytes(std::istream &in, std::streamsize file_size) {
+    std::streampos pos = in.tellg();
+    if (pos < 0 || file_size < pos)
+        throw std::runtime_error("SessionSnapshot::load: invalid stream position");
+    return static_cast<uint64_t>(file_size - pos);
+}
+
+static uint64_t checked_count_bytes(int32_t count,
+                                    uint64_t element_size,
+                                    const char *field) {
+    if (count < 0)
+        throw std::runtime_error(std::string("SessionSnapshot::load: invalid ") + field);
+
+    const uint64_t n = static_cast<uint64_t>(count);
+    if (element_size != 0 && n > std::numeric_limits<uint64_t>::max() / element_size)
+        throw std::runtime_error(std::string("SessionSnapshot::load: ") + field + " size overflow");
+
+    return n * element_size;
+}
+
+static void require_remaining(std::istream &in,
+                              std::streamsize file_size,
+                              uint64_t bytes,
+                              const char *field) {
+    if (bytes > remaining_bytes(in, file_size))
+        throw std::runtime_error(std::string("SessionSnapshot::load: ") +
+                                 field + " exceeds remaining snapshot data");
+}
+
+constexpr uint64_t kMaxMetadataContainerBytes = 64ull * 1024ull * 1024ull;
+
+static void require_metadata_container_bytes(int32_t count,
+                                             uint64_t element_size,
+                                             const char *field) {
+    const uint64_t bytes = checked_count_bytes(count, element_size, field);
+    if (bytes > kMaxMetadataContainerBytes)
+        throw std::runtime_error(std::string("SessionSnapshot::load: ") +
+                                 field + " allocation exceeds safety limit");
+}
+
 /* =========================================================================
  * capture()
  * ========================================================================= */
@@ -69,7 +110,7 @@ SessionSnapshot SessionSnapshot::capture(const RuntimeContext &ctx,
     snap.n_layers_ = ctx.n_layers();
     snap.n_heads_  = ctx.n_heads();
     snap.dim_      = ctx.dim();
-    snap.bits_     = 4; /* default; exposed via RuntimeContextConfig in V3 */
+    snap.bits_     = ctx.bits();
     snap.n_tokens_ = ctx.token_pos();
     snap.flags_    = 0;
 
@@ -89,11 +130,10 @@ SessionSnapshot SessionSnapshot::capture(const RuntimeContext &ctx,
              * ContiguousSlabStorage if available; otherwise fall back. */
             auto *csb = dynamic_cast<ContiguousSlabStorage *>(st);
             if (!csb) {
-                /* Generic backend — record empty snapshot. */
-                hs.cache_size = 0;
-                hs.slot_bytes = 0;
-                snap.heads_.push_back(std::move(hs));
-                continue;
+                throw std::runtime_error(
+                    "SessionSnapshot::capture: storage backend '" +
+                    std::string(st ? st->name() : "null") +
+                    "' does not support snapshot capture");
             }
 
             int cache_sz   = csb->size() / 2;  /* size() = K+V slots; pairs = size/2 */
@@ -235,7 +275,7 @@ SessionSnapshot SessionSnapshot::load(const std::string &path) {
     std::streamsize file_size = f.tellg();
     f.seekg(0, std::ios::beg);
 
-    if (file_size < 32)
+    if (file_size < 40)
         throw std::runtime_error("SessionSnapshot::load: file too small");
 
     SessionSnapshot snap;
@@ -257,15 +297,29 @@ SessionSnapshot SessionSnapshot::load(const std::string &path) {
     int n_heads_total = read_i32(f);
     snap.flags_       = read_u64(f);
 
+    if (snap.n_layers_ <= 0 || snap.n_heads_ <= 0)
+        throw std::runtime_error("SessionSnapshot::load: invalid layer/head dimensions");
     if (snap.dim_ <= 0)
         throw std::runtime_error("SessionSnapshot::load: invalid dim");
     if (snap.bits_ < 2 || snap.bits_ > 4)
         throw std::runtime_error("SessionSnapshot::load: invalid bits (must be 2, 3, or 4)");
     if (snap.n_tokens_ < 0)
         throw std::runtime_error("SessionSnapshot::load: invalid n_tokens");
-
-    if (n_heads_total < 0 || (size_t)n_heads_total > (size_t)file_size)
+    if (n_heads_total < 0)
         throw std::runtime_error("SessionSnapshot::load: invalid n_heads_total");
+
+    const uint64_t expected_heads = static_cast<uint64_t>(snap.n_layers_) *
+                                    static_cast<uint64_t>(snap.n_heads_);
+    if (expected_heads > static_cast<uint64_t>(std::numeric_limits<int32_t>::max()) ||
+        static_cast<uint64_t>(n_heads_total) != expected_heads)
+        throw std::runtime_error("SessionSnapshot::load: inconsistent head count");
+
+    require_metadata_container_bytes(n_heads_total, sizeof(HeadSnapshot), "head count");
+
+    constexpr uint64_t kMinHeadBlockBytes = 32;
+    const uint64_t head_block_count = static_cast<uint64_t>(n_heads_total);
+    if (head_block_count > remaining_bytes(f, file_size) / kMinHeadBlockBytes)
+        throw std::runtime_error("SessionSnapshot::load: head count exceeds remaining snapshot data");
 
     snap.heads_.resize(n_heads_total);
     for (int i = 0; i < n_heads_total; ++i) {
@@ -275,45 +329,63 @@ SessionSnapshot SessionSnapshot::load(const std::string &path) {
         hs.cache_size = read_i32(f);
         hs.slot_bytes = read_i32(f);
 
+        if (hs.layer < 0 || hs.layer >= snap.n_layers_ ||
+            hs.head < 0 || hs.head >= snap.n_heads_)
+            throw std::runtime_error("SessionSnapshot::load: invalid head coordinates");
+        if (hs.cache_size < 0 || hs.slot_bytes < 0)
+            throw std::runtime_error("SessionSnapshot::load: invalid head storage dimensions");
+        if (hs.cache_size > std::numeric_limits<int32_t>::max() / 2)
+            throw std::runtime_error("SessionSnapshot::load: cache_size overflow");
+
+        const uint64_t slot_count = static_cast<uint64_t>(hs.cache_size) * 2u;
+        const uint64_t expected_data_bytes = slot_count * static_cast<uint64_t>(hs.slot_bytes);
+
         uint64_t data_bytes = read_u64(f);
-        if (data_bytes > (uint64_t)file_size)
-            throw std::runtime_error("SessionSnapshot::load: data_bytes exceeds file size");
-        hs.storage_data.resize(data_bytes);
+        if (data_bytes != expected_data_bytes)
+            throw std::runtime_error("SessionSnapshot::load: inconsistent storage data size");
+        require_remaining(f, file_size, data_bytes, "storage data");
+        hs.storage_data.resize(static_cast<size_t>(data_bytes));
         if (data_bytes > 0)
             read_bytes(f, hs.storage_data.data(), data_bytes);
 
         int n_scales = read_i32(f);
-        if (n_scales < 0 || (size_t)n_scales * sizeof(float) > (size_t)file_size)
-            throw std::runtime_error("SessionSnapshot::load: invalid n_scales");
-        hs.scales.resize(n_scales);
+        const uint64_t expected_scale_bytes = checked_count_bytes(n_scales, sizeof(float), "scale count");
+        if (static_cast<uint64_t>(n_scales) != slot_count)
+            throw std::runtime_error("SessionSnapshot::load: scale count does not match cache size");
+        require_remaining(f, file_size, expected_scale_bytes, "scale data");
+        hs.scales.resize(static_cast<size_t>(n_scales));
         if (n_scales > 0)
-            read_bytes(f, hs.scales.data(), (size_t)n_scales * sizeof(float));
+            read_bytes(f, hs.scales.data(), expected_scale_bytes);
 
         int n_tags = read_i32(f);
-        if (n_tags < 0 || (size_t)n_tags > (size_t)file_size)
-            throw std::runtime_error("SessionSnapshot::load: invalid n_tags");
-        hs.format_tags.resize(n_tags);
+        const uint64_t expected_tag_bytes = checked_count_bytes(n_tags, sizeof(uint8_t), "tag count");
+        if (static_cast<uint64_t>(n_tags) != slot_count)
+            throw std::runtime_error("SessionSnapshot::load: tag count does not match cache size");
+        require_remaining(f, file_size, expected_tag_bytes, "format tag data");
+        hs.format_tags.resize(static_cast<size_t>(n_tags));
         if (n_tags > 0)
-            read_bytes(f, hs.format_tags.data(), (size_t)n_tags);
+            read_bytes(f, hs.format_tags.data(), expected_tag_bytes);
     }
 
     /* Strategy state. */
     if (snap.flags_ & 2u) {
         for (auto &hs : snap.heads_) {
             int slen = read_i32(f);
-            if (slen < 0 || (size_t)slen > (size_t)file_size)
-                throw std::runtime_error("SessionSnapshot::load: invalid strategy state size");
-            hs.strategy_state.resize(slen);
+            const uint64_t state_bytes = checked_count_bytes(slen, sizeof(uint8_t), "strategy state size");
+            require_remaining(f, file_size, state_bytes, "strategy state");
+            hs.strategy_state.resize(static_cast<size_t>(slen));
             if (slen > 0)
-                read_bytes(f, hs.strategy_state.data(), (size_t)slen);
+                read_bytes(f, hs.strategy_state.data(), state_bytes);
         }
     }
 
     /* Token log. */
     if (snap.flags_ & 1u) {
         int n_entries = read_i32(f);
-        if (n_entries < 0 || (size_t)n_entries * sizeof(float) > (size_t)file_size)
-            throw std::runtime_error("SessionSnapshot::load: invalid token_log entries");
+        const uint64_t min_entry_bytes = checked_count_bytes(n_entries, 12u, "token_log entries");
+        require_metadata_container_bytes(n_entries, sizeof(SnapshotTokenEntry), "token_log entries");
+        if (min_entry_bytes > remaining_bytes(f, file_size))
+            throw std::runtime_error("SessionSnapshot::load: token_log entries exceed remaining snapshot data");
         snap.token_log_.resize(n_entries);
         for (auto &e : snap.token_log_) {
             e.layer = read_i32(f);
@@ -321,10 +393,14 @@ SessionSnapshot SessionSnapshot::load(const std::string &path) {
             e.dim   = read_i32(f);
             if (e.dim < 0)
                 throw std::runtime_error("SessionSnapshot::load: invalid token dimension");
+
+            const uint64_t vector_bytes = checked_count_bytes(
+                e.dim, static_cast<uint64_t>(sizeof(float)) * 2u, "token dimension");
+            require_remaining(f, file_size, vector_bytes, "token vectors");
             e.k_fp32.resize(e.dim);
             e.v_fp32.resize(e.dim);
-            read_bytes(f, e.k_fp32.data(), (size_t)e.dim * sizeof(float));
-            read_bytes(f, e.v_fp32.data(), (size_t)e.dim * sizeof(float));
+            read_bytes(f, e.k_fp32.data(), static_cast<size_t>(e.dim) * sizeof(float));
+            read_bytes(f, e.v_fp32.data(), static_cast<size_t>(e.dim) * sizeof(float));
         }
     }
 
@@ -335,5 +411,3 @@ SessionSnapshot SessionSnapshot::load(const std::string &path) {
 }
 
 } /* namespace adaptq */
-
-

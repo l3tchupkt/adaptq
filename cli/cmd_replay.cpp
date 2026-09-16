@@ -16,6 +16,7 @@
  *   adaptq replay <snapshot.aqss>
  *     [--strategy har_fixed|fp_passthrough]
  *     [--from-token N]
+ *     [--capacity N]
  *     [--metrics]
  *     [--output <file>]
  *     [--format json|csv|md|tex]
@@ -148,16 +149,19 @@ int cmd_replay(int argc, char **argv) {
     std::string snap_path    = argv[0];
     std::string strategy_override;
     std::string output_path;
-    std::string format       = "json";
-    int         from_token   = -1;
-    bool        collect_m    = false;
-    bool        summary_json = false;
+    std::string format            = "json";
+    int         from_token        = -1;
+    int         capacity_override = -1;
+    bool        collect_m         = false;
+    bool        summary_json      = false;
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--strategy") == 0 && i + 1 < argc) {
             strategy_override = argv[++i];
         } else if (strcmp(argv[i], "--from-token") == 0 && i + 1 < argc) {
             from_token = std::atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--capacity") == 0 && i + 1 < argc) {
+            capacity_override = std::atoi(argv[++i]);
         } else if (strcmp(argv[i], "--metrics") == 0) {
             collect_m = true;
         } else if (strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
@@ -167,6 +171,12 @@ int cmd_replay(int argc, char **argv) {
         } else if (strcmp(argv[i], "--summary-json") == 0) {
             summary_json = true;
         }
+    }
+
+    if (format != "json" && format != "csv" && format != "md" && format != "tex") {
+        std::cerr << "ERROR: unsupported output format '" << format
+                  << "' (expected json, csv, md, or tex)\n";
+        return 1;
     }
 
     /* Load snapshot. */
@@ -190,6 +200,11 @@ int cmd_replay(int argc, char **argv) {
     cfg.dim         = snap.dim();
     cfg.bits        = snap.bits();
     cfg.log_tokens  = false;
+    if (capacity_override > 0) {
+        cfg.capacity = capacity_override;
+    } else {
+        cfg.capacity = std::max(cfg.capacity, snap.n_tokens());
+    }
 
     RuntimeContext ctx;
     if (strategy_override.empty()) {

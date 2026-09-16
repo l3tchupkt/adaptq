@@ -72,6 +72,16 @@ TEST_CASE("ReplayEngine: full replay completes without error", "[replay]") {
     REQUIRE(report.wall_time_ms >= 0.0);
 }
 
+TEST_CASE("ReplayEngine: rejects incompatible context shape", "[replay][security]") {
+    SessionSnapshot snap = build_snapshot(4, 64);
+    RuntimeContextConfig cfg = make_cfg(4, 32);
+    cfg.log_tokens = false;
+    RuntimeContext ctx;
+    ctx.init(cfg);
+    ReplayEngine engine(false);
+    REQUIRE_THROWS_AS(engine.replay(snap, ctx), std::invalid_argument);
+}
+
 TEST_CASE("ReplayEngine: full replay produces non-empty report", "[replay]") {
     SessionSnapshot snap = build_snapshot(15);
 
@@ -224,4 +234,30 @@ TEST_CASE("ReplayEngine: full replay and branch produce same storage at branch p
      * After branch at 6, storage holds 6 K+V pairs.
      * Full ≥ branch (exact ratio depends on capacity evictions). */
     REQUIRE(full_bytes >= branch_bytes);
+}
+
+TEST_CASE("ReplayEngine: replay retains all tokens when capacity is dynamically sized to snapshot length",
+          "[replay][capacity]") {
+    const int N_TOKENS = 64;
+    SessionSnapshot snap = build_snapshot(N_TOKENS, 64);
+
+    RuntimeContextConfig cfg;
+    cfg.n_layers   = snap.n_layers();
+    cfg.n_heads    = snap.n_heads();
+    cfg.dim        = snap.dim();
+    cfg.bits       = snap.bits();
+    cfg.log_tokens = false;
+    cfg.capacity   = 1;
+    cfg.capacity   = std::max(cfg.capacity, snap.n_tokens());
+
+    RuntimeContext ctx;
+    ctx.init(cfg);
+
+    ReplayEngine engine(false);
+    ReplayReport report = engine.replay(snap, ctx);
+
+    REQUIRE(report.n_tokens_replayed == N_TOKENS);
+    auto *storage = ctx.get_storage(0, 0);
+    REQUIRE(storage->bytes_used() > 0);
+    REQUIRE(storage->bytes_used() == storage->bytes_capacity());
 }

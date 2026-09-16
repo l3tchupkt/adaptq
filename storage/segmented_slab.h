@@ -33,6 +33,8 @@ public:
     }
 
     void init(int capacity, int max_slot_bytes) override {
+        if (capacity <= 0 || capacity > SS_MAX_CAP || max_slot_bytes <= 0)
+            throw std::invalid_argument("SegmentedSlabStorage::init: capacity must be in [1, 65536] and max_slot_bytes > 0");
         for (int i = 0; i < n_slabs_; ++i) {
             if (slabs_[i].data) {
                 aligned_free(slabs_[i].data);
@@ -56,9 +58,10 @@ public:
 
     StorageSlot write(const uint8_t *data, int data_bytes,
                       float scale, uint8_t format_tag) override {
-        assert(data && data_bytes <= max_slot_bytes_);
+        if (!data || data_bytes <= 0 || data_bytes > max_slot_bytes_ || capacity_ <= 0)
+            return (StorageSlot)0;
         Slab *sl = get_or_create_slab(format_tag, data_bytes);
-        assert(sl);
+        if (!sl) return (StorageSlot)0;
         int local;
         if (sl->size < capacity_) { local = sl->next_slot++; sl->size++; }
         else { local = sl->head; sl->head = (sl->head + 1) % capacity_; total_used_ -= sl->data_sizes[local]; }
@@ -76,7 +79,8 @@ public:
     CompressResult read(StorageSlot slot) const override {
         int slab_id = (int)(slot / SS_ENCODE);
         int local   = (int)(slot % SS_ENCODE);
-        assert(slab_id < n_slabs_);
+        if (slab_id < 0 || slab_id >= n_slabs_ || local < 0 || local >= capacity_)
+            return CompressResult{nullptr, 0, 0.f, 0, slot};
         const Slab &sl = slabs_[slab_id];
         return CompressResult{
             sl.data + (size_t)local * sl.slot_bytes,
@@ -87,8 +91,10 @@ public:
     void free_slot(StorageSlot slot) override {
         int slab_id = (int)(slot / SS_ENCODE);
         int local   = (int)(slot % SS_ENCODE);
-        if (slab_id >= n_slabs_) return;
+        if (slab_id < 0 || slab_id >= n_slabs_ || local < 0 || local >= (int)slabs_[slab_id].data_sizes.size())
+            return;
         total_used_ -= slabs_[slab_id].data_sizes[local];
+        if (total_used_ < 0) total_used_ = 0;
         slabs_[slab_id].data_sizes[local] = 0;
     }
 

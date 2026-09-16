@@ -28,6 +28,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Operating System :: POSIX :: Linux",
   "Operating System :: MacOS",
+  "Operating System :: OS Independent",
 ]
 dependencies = [
     "numpy",
@@ -76,3 +77,7 @@ markers = [
     "gpu_required: requires CUDA GPU",
     "slow: long-running test",
 ]
+
+[tool.setuptools]
+packages = ["adaptq"]
+include-package-data = true

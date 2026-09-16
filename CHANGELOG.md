@@ -37,6 +37,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`adaptq/runtime_py/`** — `IRuntimeAdapter` Python ABC + backend registry
   - `create_adapter(backend)` factory for all supported backends
   - `backend_available(backend)` / `list_available_backends()` discovery helpers
+  - `IRuntimeAdapter.generate_streaming()`: Added metrics tracking (wall time, tokens/sec, token IDs, KV stats) and lifecycle guarantees via `generation_result()`
 - **`adaptq/runtime_py/backends/transformers_hf.py`** — HuggingFace Transformers adapter (Priority 1)
   - Hooks into `DynamicCache.update()` to intercept K/V per layer
   - Supports any CausalLM: Qwen, LLaMA, Mistral, Gemma, GPT-2, …
