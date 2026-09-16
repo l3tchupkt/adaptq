@@ -45,7 +45,6 @@ except ImportError:
     LlamaState = None      # type: ignore
 
 try:
-    import numpy as np
     _NP_AVAILABLE = True
 except ImportError:
     _NP_AVAILABLE = False

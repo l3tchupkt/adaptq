@@ -6,7 +6,7 @@ Imports are lazy to avoid hard-failing when optional packages are missing.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, Optional, Type
+from typing import TYPE_CHECKING, Dict, Type
 
 if TYPE_CHECKING:
     from ..base import IRuntimeAdapter

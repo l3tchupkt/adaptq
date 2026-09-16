@@ -32,7 +32,7 @@ Quick start:
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from .base import IRuntimeAdapter
 from .metadata import (
@@ -90,7 +90,7 @@ def backend_available(backend: str) -> bool:
         cls = get_adapter_class(backend)
         # Try instantiating — this will raise ImportError/RuntimeError if
         # the required package is missing or preconditions are not met.
-        obj = cls()
+        cls()
         return True
     except (ImportError, RuntimeError, NotImplementedError):
         return False
