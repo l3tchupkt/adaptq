@@ -69,6 +69,9 @@ const char **strategy_names(int *out_count) {
  * ========================================================================= */
 
 static int next_pow2_rt(int n) {
+    if (n <= 1) return 1;
+    if (n > (1 << 30)) return 1 << 30;
+
     int p = 1;
     while (p < n) p <<= 1;
     return p;
@@ -433,3 +436,6 @@ ComputeMetrics RuntimeContext::compute(int          layer,
 }
 
 } /* namespace adaptq */
+
+
+
