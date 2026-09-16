@@ -30,11 +30,12 @@ void gen_rademacher(int8_t* D, int d, uint64_t seed) {
 //   Pass 0: apply Rademacher D and first butterfly (len=1) in one sweep.
 //   Passes 1..log2(n)-1: 4-wide unrolled butterfly.
 //   Final pass: normalization by 1/sqrt(n), unrolled 4-wide.
-static void fwht_fused(float* x, const int8_t* D, int n) {
-    // Pass 0: D-apply fused with len=1 butterfly
+static void fwht_fused(float* x, const int8_t* D, int d, int n) {
+    // D is defined only for the original d-dimensional input. When the
+    // input is padded to n > d, padded coordinates use an implicit +1 sign.
     for (int i = 0; i < n; i += 2) {
-        float a = x[i]   * (float)D[i];
-        float b = x[i+1] * (float)D[i+1];
+        float a = x[i]   * (i < d ? (float)D[i] : 1.0f);
+        float b = x[i+1] * (i + 1 < d ? (float)D[i+1] : 1.0f);
         x[i]   = a + b;
         x[i+1] = a - b;
     }
@@ -98,13 +99,14 @@ void fwht_forward(float* x, const int8_t* D, int d) {
         memset(tl_pad_buf + d, 0, (p - d) * sizeof(float));
         work = tl_pad_buf;
     }
-    fwht_fused(work, D, p);
+    fwht_fused(work, D, d, p);
     if (p != d) memcpy(x, work, d * sizeof(float));
 }
 
 void fwht_inverse(float* x, const int8_t* D, int d) {
     if (!x || !D || d <= 0) return;
-    // Inverse of (1/sqrt(p))*H*D*x  is  D*(1/sqrt(p))*H*y
+    // Inverse of (1/sqrt(p))*H*D*x is D*(1/sqrt(p))*H*y.
+    // For padded coordinates beyond d, D is implicitly +1.
     int p = next_pow2(d);
     float* work = x;
     if (p != d) {
@@ -121,11 +123,12 @@ void fwht_inverse(float* x, const int8_t* D, int d) {
     float scale = 1.0f / sqrtf((float)p);
     int i = 0;
     for (; i + 3 < p; i += 4) {
-        work[i]  =work[i]  *scale*(float)D[i];
-        work[i+1]=work[i+1]*scale*(float)D[i+1];
-        work[i+2]=work[i+2]*scale*(float)D[i+2];
-        work[i+3]=work[i+3]*scale*(float)D[i+3];
+        work[i]  =work[i]  *scale*(i < d ? (float)D[i] : 1.0f);
+        work[i+1]=work[i+1]*scale*(i+1 < d ? (float)D[i+1] : 1.0f);
+        work[i+2]=work[i+2]*scale*(i+2 < d ? (float)D[i+2] : 1.0f);
+        work[i+3]=work[i+3]*scale*(i+3 < d ? (float)D[i+3] : 1.0f);
     }
-    for (; i < p; ++i) work[i] = work[i] * scale * (float)D[i];
+    for (; i < p; ++i)
+        work[i] = work[i] * scale * (i < d ? (float)D[i] : 1.0f);
     if (p != d) memcpy(x, work, d * sizeof(float));
 }
