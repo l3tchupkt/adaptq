@@ -25,6 +25,7 @@ __all__ = [
     "ReplayResult",
     "CompareResult",
     "snapshot_info",
+    "snapshot_to_json",
 ]
 
 
@@ -438,3 +439,36 @@ def snapshot_info(path: Union[str, Path]) -> dict:
         "has_token_log": bool(flags & 1),
         "has_strategy_state": bool(flags & 2),
     }
+
+
+def snapshot_to_json(
+    path: Union[str, Path],
+    json_path: Optional[Union[str, Path]] = None,
+    indent: int = 2,
+) -> str:
+    """
+    Export snapshot header metadata as a formatted JSON string.
+
+    Optionally writes the JSON content to ``json_path`` if specified.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to the ``.aqss`` binary snapshot file.
+    json_path : str or Path, optional
+        Optional path where the formatted JSON string will be saved.
+    indent : int, default 2
+        JSON indentation level for formatting.
+
+    Returns
+    -------
+    str
+        Formatted JSON string containing snapshot metadata.
+    """
+    info = snapshot_info(path)
+    json_str = json.dumps(info, indent=indent)
+    if json_path is not None:
+        out_path = Path(json_path)
+        out_path.write_text(json_str, encoding="utf-8")
+    return json_str
+

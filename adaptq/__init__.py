@@ -43,10 +43,12 @@ except ImportError:
 
 # -- Replay / Compare (uses CLI subprocess, optional) -------------------------
 try:
-    from .replay import ReplayEngine, ReplayResult, CompareResult, snapshot_info
+    from .replay import (
+        ReplayEngine, ReplayResult, CompareResult, snapshot_info, snapshot_to_json
+    )
     _REPLAY_AVAILABLE = True
 except ImportError:
-    ReplayEngine = CompareResult = ReplayResult = snapshot_info = None  # type: ignore
+    ReplayEngine = CompareResult = ReplayResult = snapshot_info = snapshot_to_json = None  # type: ignore
     _REPLAY_AVAILABLE = False
 
 
@@ -92,6 +94,7 @@ __all__ = [
     "ReplayResult",
     "CompareResult",
     "snapshot_info",
+    "snapshot_to_json",
     # V2.1 runtime adapters
     "create_adapter",
     "list_available_backends",
