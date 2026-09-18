@@ -60,6 +60,23 @@ TEST_CASE("Scalar Backend Factory and Interface Conformance", "[kernel][scalar]"
     REQUIRE(std::string(scalar_backend->name()) == "scalar");
 }
 
+TEST_CASE("AVX2 backend selection requires FMA support", "[kernel][avx2][fma]") {
+    unset_env_var("ADAPTQ_DISABLE_AVX2");
+    unset_env_var("ADAPTQ_FORCE_SCALAR");
+    unset_env_var("ADAPTQ_BACKEND");
+
+    const bool avx2 = adaptq::cpu_supports_avx2();
+    const bool fma = adaptq::cpu_supports_fma();
+    adaptq::IKernelBackend *backend = adaptq::select_kernel_backend();
+    REQUIRE(backend != nullptr);
+
+    if (avx2 && fma) {
+        REQUIRE(std::string(backend->name()) == "avx2");
+    } else {
+        REQUIRE(std::string(backend->name()) == "scalar");
+    }
+}
+
 TEST_CASE("Runtime Environment Variable Fallback Override", "[kernel][fallback]") {
     // Ensure clean initial state
     unset_env_var("ADAPTQ_DISABLE_AVX2");
