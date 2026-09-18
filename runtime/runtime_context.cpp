@@ -321,31 +321,6 @@ ComputeMetrics RuntimeContext::compute(int          layer,
         return m;
     }
 
-    int padded = next_pow2_rt(cfg_.dim);
-
-    /* ---- 1. Rotate query (FWHT forward) -------------------------------- */
-    q_rot_.assign(padded, 0.f);
-    memcpy(q_rot_.data(), q_vec, cfg_.dim * sizeof(float));
-
-    /* L2-normalise */
-    float qnorm = 0.f;
-    for (int i = 0; i < cfg_.dim; ++i) qnorm += q_vec[i] * q_vec[i];
-    qnorm = sqrtf(qnorm + 1e-12f);
-    float inv_qn = 1.f / qnorm;
-    for (int i = 0; i < padded; ++i) q_rot_[i] *= inv_qn;
-
-    /* Apply kernel FWHT forward — needs Rademacher D from the strategy's
-     * underlying Quantizer. We call the kernel backend directly if the
-     * strategy uses HARFixedStrategy internals. For V1 we call the scalar
-     * fwht_forward directly since all strategies use the same Rademacher D.
-     *
-     * Design note: a proper V2 extension would expose "query rotation" as
-     * an IKernelBackend method. For now, IKernelBackend::fwht_forward
-     * takes a D vector; we get D from the strategy cast if possible,
-     * otherwise fall back to an identity D (all +1). */
-    /* Attempt dynamic cast to get the Rademacher D — strategy-specific. */
-
-
     /* Read one K slot to determine the format_tag. */
     CompressResult sample = st->read(0);
     const uint8_t ftag   = sample.format_tag;
