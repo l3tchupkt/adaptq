@@ -1,5 +1,6 @@
 /* Catch2 v3 — link against Catch2::Catch2WithMain */
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include "../../include/adaptq.h"
 #include <cstring>
 #include <cmath>
@@ -282,6 +283,43 @@ TEST_CASE("multi-head API rejects null handles and buffers without crashing", "[
     REQUIRE(adaptq_mha_compute_batch(mha, 0, nullptr, 0, nullptr) == 0);
 
     adaptq_mha_destroy(mha);
+}
+
+TEST_CASE("adaptq_create honors hybrid threshold", "[api][hybrid]") {
+    constexpr int dim = 64;
+    float k0[dim], k1[dim], v0[dim], v1[dim], q[dim];
+    float quantized_out[dim], hybrid_out[dim];
+
+    for (int i = 0; i < dim; ++i) {
+        k0[i] = 1.0f;
+        k1[i] = -1.0f;
+        v0[i] = (float)(i - 21) / 13.0f;
+        v1[i] = (float)(31 - i) / 17.0f;
+        q[i] = (float)((i % 7) - 3);
+    }
+
+    adaptq_ctx_t quantized = adaptq_create(dim, 4, 8, 42, 0.f, 0);
+    adaptq_ctx_t hybrid = adaptq_create(dim, 4, 8, 42, 0.f, 2);
+    REQUIRE(quantized != nullptr);
+    REQUIRE(hybrid != nullptr);
+
+    adaptq_append(quantized, k0, v0, 0);
+    adaptq_append(quantized, k1, v1, 1);
+    adaptq_append(hybrid, k0, v0, 0);
+    adaptq_append(hybrid, k1, v1, 1);
+
+    REQUIRE(adaptq_compute(quantized, q, quantized_out) == 2);
+    REQUIRE(adaptq_compute(hybrid, q, hybrid_out) == 2);
+
+    float max_difference = 0.f;
+    for (int i = 0; i < dim; ++i)
+        max_difference =
+            std::max(max_difference, std::fabs(quantized_out[i] - hybrid_out[i]));
+
+    REQUIRE(max_difference > 1e-3f);
+
+    adaptq_destroy(quantized);
+    adaptq_destroy(hybrid);
 }
 
 /* ---- Feature flags + version ------------------------------------------ */

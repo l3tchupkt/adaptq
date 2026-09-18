@@ -47,7 +47,6 @@ static bool require_pointer(const void *pointer, const char *operation,
 
 struct AdapTQCtx {
   AttentionHead head;
-  int hybrid_thresh; // use FP path when n_tokens < this (owned by AttentionHead::raw_kv)
   int dim;
 };
 
@@ -68,8 +67,7 @@ adaptq_ctx_t adaptq_create(int dim, int bits, int capacity, uint64_t seed,
   }
   auto *ctx = new AdapTQCtx();
   ctx->dim = dim;
-  ctx->hybrid_thresh = hybrid_thresh;
-  ctx->head.init(dim, bits, capacity, seed, v_mass);
+  ctx->head.init(dim, bits, capacity, seed, v_mass, hybrid_thresh);
   return ctx;
 }
 
