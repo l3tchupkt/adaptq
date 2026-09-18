@@ -212,6 +212,12 @@ if(ADAPTQ_BUILD_TESTS)
   target_link_libraries(test_api PRIVATE adapTQ_core Catch2::Catch2WithMain)
   catch_discover_tests(test_api)
 
+  # --- test_avx2_softmax ---------------------------------------------------
+  add_executable(test_avx2_softmax
+      tests/unit/test_avx2_softmax.cpp)
+  target_link_libraries(test_avx2_softmax PRIVATE adapTQ_core Catch2::Catch2WithMain)
+  catch_discover_tests(test_avx2_softmax)
+
   # --- test_conformance ----------------------------------------------------
   # Strategy .cpp files are compiled inline within this single TU (not in
   # any library) to avoid ODR violations. The CMakeLists does not list them
