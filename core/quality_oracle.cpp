@@ -123,11 +123,15 @@ public:
         if (n <= 0 || !logits) return -1.f;
 
         float lo = logits[0], hi = logits[0];
+        if (!std::isfinite(lo)) return -1.f;
         for (int i = 1; i < n; ++i) {
+            if (!std::isfinite(logits[i])) continue;
             if (logits[i] < lo) lo = logits[i];
             if (logits[i] > hi) hi = logits[i];
         }
+        if (!std::isfinite(hi)) return -1.f;
         float spread = hi - lo;
+        if (!std::isfinite(spread)) return -1.f;
 
         /* Heuristic: spread < 2.0 → near-uniform attention → safe.
          * spread > 20.0 → very peaked → risky.
