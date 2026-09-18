@@ -298,6 +298,15 @@ TEST_CASE("adaptq_features returns valid bitmask", "[api]") {
     REQUIRE((f & ADAPTQ_FEAT_SPARSE_V) != 0);
 }
 
+TEST_CASE("adaptq feature flags and version agree on AVX2 support", "[api][avx2]") {
+    const unsigned features = adaptq_features();
+    const std::string version = adaptq_version();
+    const bool feature_avx2 = (features & ADAPTQ_FEAT_AVX2) != 0;
+    const bool version_avx2 = version.find("-avx2") != std::string::npos;
+
+    REQUIRE(feature_avx2 == version_avx2);
+}
+
 /* ---- Context Limits (Issue #22) --------------------------------------- */
 
 TEST_CASE("adaptq context handles sizes around and above 65536 tokens", "[api][limits]") {

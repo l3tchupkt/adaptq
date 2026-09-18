@@ -264,16 +264,20 @@ size_t adaptq_mha_total_kv_bytes(adaptq_mha_t h) {
  * Feature flags + version
  * ----------------------------------------------------------------------- */
 
+#if !defined(ADAPTQ_AVX2_BACKEND_COMPILED)
+#define ADAPTQ_AVX2_BACKEND_COMPILED 0
+#endif
+
 unsigned int adaptq_features(void) {
   unsigned int f = ADAPTQ_FEAT_HYBRID | ADAPTQ_FEAT_SPARSE_V;
-#ifdef __AVX2__
+#if ADAPTQ_AVX2_BACKEND_COMPILED || defined(__AVX2__)
   f |= ADAPTQ_FEAT_AVX2;
 #endif
   return f;
 }
 
 const char *adaptq_version(void) {
-#ifdef __AVX2__
+#if ADAPTQ_AVX2_BACKEND_COMPILED || defined(__AVX2__)
   return "3.2.0-avx2";
 #else
   return "3.2.0-scalar";
