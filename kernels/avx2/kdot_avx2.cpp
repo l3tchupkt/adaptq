@@ -158,6 +158,108 @@ static void vaccum4_avx2(float *__restrict acc,
     }
 }
 
+static inline __m256 fwht_pairwise_avx2(__m256 values) {
+    const __m256i swap_idx = _mm256_setr_epi32(1, 0, 3, 2, 5, 4, 7, 6);
+    const __m256 swapped = _mm256_permutevar8x32_ps(values, swap_idx);
+    const __m256 sum = _mm256_add_ps(values, swapped);
+    const __m256 diff = _mm256_sub_ps(values, swapped);
+    const __m128 sum_lo = _mm256_castps256_ps128(sum);
+    const __m128 sum_hi = _mm256_extractf128_ps(sum, 1);
+    const __m128 diff_lo = _mm256_castps256_ps128(diff);
+    const __m128 diff_hi = _mm256_extractf128_ps(diff, 1);
+    const __m128 sum_pairs = _mm_shuffle_ps(sum_lo, sum_hi, _MM_SHUFFLE(2, 0, 2, 0));
+    const __m128 diff_pairs = _mm_shuffle_ps(diff_lo, diff_hi, _MM_SHUFFLE(2, 0, 2, 0));
+    const __m128 out_lo = _mm_unpacklo_ps(sum_pairs, diff_pairs);
+    const __m128 out_hi = _mm_unpackhi_ps(sum_pairs, diff_pairs);
+    return _mm256_set_m128(out_hi, out_lo);
+}
+
+static inline __m256 fwht_signs_avx2(const int8_t *D, int offset) {
+    return _mm256_setr_ps(
+        (float)D[offset], (float)D[offset + 1],
+        (float)D[offset + 2], (float)D[offset + 3],
+        (float)D[offset + 4], (float)D[offset + 5],
+        (float)D[offset + 6], (float)D[offset + 7]);
+}
+
+static void fwht_stage_avx2(float *x, int p, int len) {
+    const int block_size = len << 1;
+    for (int base = 0; base < p; base += block_size) {
+        float *lo = x + base;
+        float *hi = lo + len;
+        int j = 0;
+        for (; j + 7 < len; j += 8) {
+            const __m256 a = _mm256_loadu_ps(lo + j);
+            const __m256 b = _mm256_loadu_ps(hi + j);
+            _mm256_storeu_ps(lo + j, _mm256_add_ps(a, b));
+            _mm256_storeu_ps(hi + j, _mm256_sub_ps(a, b));
+        }
+        for (; j < len; ++j) {
+            const float a = lo[j];
+            const float b = hi[j];
+            lo[j] = a + b;
+            hi[j] = a - b;
+        }
+    }
+}
+
+static void fwht_forward_avx2(float *x, const int8_t *D, int p) {
+    if (!x || !D || p <= 0)
+        return;
+
+    if (p == 1) {
+        x[0] *= (float)D[0];
+        return;
+    }
+
+    int i = 0;
+    for (; i + 7 < p; i += 8) {
+        const __m256 values = _mm256_loadu_ps(x + i);
+        const __m256 signed_values = _mm256_mul_ps(values, fwht_signs_avx2(D, i));
+        _mm256_storeu_ps(x + i, fwht_pairwise_avx2(signed_values));
+    }
+    for (; i < p; i += 2) {
+        const float a = x[i] * (float)D[i];
+        const float b = x[i + 1] * (float)D[i + 1];
+        x[i] = a + b;
+        x[i + 1] = a - b;
+    }
+
+    for (int len = 2; len < p; len <<= 1)
+        fwht_stage_avx2(x, p, len);
+
+    const __m256 inv = _mm256_set1_ps(1.f / sqrtf((float)p));
+    for (i = 0; i + 7 < p; i += 8)
+        _mm256_storeu_ps(x + i, _mm256_mul_ps(_mm256_loadu_ps(x + i), inv));
+    const float scalar_inv = _mm256_cvtss_f32(inv);
+    for (; i < p; ++i)
+        x[i] *= scalar_inv;
+}
+
+static void fwht_inverse_avx2(float *x, const int8_t *D, int p) {
+    if (!x || !D || p <= 0)
+        return;
+
+    if (p == 1) {
+        x[0] *= (float)D[0];
+        return;
+    }
+
+    for (int len = 1; len < p; len <<= 1)
+        fwht_stage_avx2(x, p, len);
+
+    const __m256 scale = _mm256_set1_ps(1.f / sqrtf((float)p));
+    const float scalar_scale = _mm256_cvtss_f32(scale);
+    int i = 0;
+    for (; i + 7 < p; i += 8) {
+        const __m256 values = _mm256_loadu_ps(x + i);
+        const __m256 rotated = _mm256_mul_ps(values, fwht_signs_avx2(D, i));
+        _mm256_storeu_ps(x + i, _mm256_mul_ps(rotated, scale));
+    }
+    for (; i < p; ++i)
+        x[i] *= (float)D[i] * scalar_scale;
+}
+
 namespace adaptq {
 
 /* =========================================================================
@@ -166,10 +268,10 @@ namespace adaptq {
 class AVX2KernelBackend final : public IKernelBackend {
 public:
     void fwht_forward(float *x, const int8_t *D, int p) override {
-        ::fwht_forward(x, D, p);
+        fwht_forward_avx2(x, D, p);
     }
     void fwht_inverse(float *x, const int8_t *D, int p) override {
-        ::fwht_inverse(x, D, p);
+        fwht_inverse_avx2(x, D, p);
     }
 
     /* K-dot: 4-token batches via kdot4_quad, scalar tail via kdot1 */
