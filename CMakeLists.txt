@@ -212,6 +212,12 @@ if(ADAPTQ_BUILD_TESTS)
   target_link_libraries(test_api PRIVATE adapTQ_core Catch2::Catch2WithMain)
   catch_discover_tests(test_api)
 
+  # --- test_sparse_v_selection --------------------------------------------
+  add_executable(test_sparse_v_selection
+      tests/unit/test_sparse_v_selection.cpp)
+  target_link_libraries(test_sparse_v_selection PRIVATE adapTQ_core Catch2::Catch2WithMain)
+  catch_discover_tests(test_sparse_v_selection)
+
   # --- test_conformance ----------------------------------------------------
   # Strategy .cpp files are compiled inline within this single TU (not in
   # any library) to avoid ODR violations. The CMakeLists does not list them
