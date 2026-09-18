@@ -12,7 +12,8 @@ static thread_local float tl_pad_buf[ADAPTQ_FWHT_PAD_BUF];
 
 int next_pow2(int n) {
     if (n <= 1) return 1;
-    if (n > (1 << 30)) return (1 << 30);
+    if (n > (1 << 30))
+        throw std::invalid_argument("next_pow2: dimension exceeds 2^30");
     int p = 1;
     while (p < n) p <<= 1;
     return p;
