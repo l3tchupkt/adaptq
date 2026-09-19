@@ -32,7 +32,6 @@ from ..metadata import (
 # ---------------------------------------------------------------------------
 try:
     import torch
-    import numpy as np
     from transformers import AutoTokenizer, AutoModelForCausalLM
     from transformers import DynamicCache
     _HF_AVAILABLE = True

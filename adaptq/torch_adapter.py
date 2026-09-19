@@ -8,8 +8,8 @@ except ImportError:
     _TORCH_AVAILABLE = False
 
 try:
-    from .core import Engine
-    _ENGINE_AVAILABLE = True
+    from .core import Engine, _ADAPTQ_PY_AVAILABLE
+    _ENGINE_AVAILABLE = _ADAPTQ_PY_AVAILABLE
 except ImportError:
     Engine = None   # type: ignore[assignment,misc]
     _ENGINE_AVAILABLE = False
