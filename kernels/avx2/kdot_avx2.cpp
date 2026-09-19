@@ -22,7 +22,51 @@
  *   vaccum4<BITS> — 4-token V accumulation fused
  * ----------------------------------------------------------------------- */
 
-/* ---- AVX2 primitive helpers (identical to attention.cpp) -------------- */
+/* ---- Small-dimension scalar fallbacks --------------------------------- */
+template<int BITS>
+static float kdot_small_avx2(const float *q, const uint8_t *packed,
+                             const float *cb, int padded) {
+    float dot = 0.f;
+    int bit_pos = 0;
+    const uint32_t mask = (1u << BITS) - 1u;
+    for (int i = 0; i < padded; ++i, bit_pos += BITS) {
+        const int byte_pos = bit_pos >> 3;
+        const int offset = bit_pos & 7;
+        uint32_t value = packed[byte_pos];
+        if (offset + BITS <= 8) {
+            value = (value >> (8 - offset - BITS)) & mask;
+        } else {
+            const int first_bits = 8 - offset;
+            value = ((value & ((1u << first_bits) - 1u))
+                     << (BITS - first_bits)) |
+                    (packed[byte_pos + 1] >> (8 - (BITS - first_bits)));
+            value &= mask;
+        }
+        dot += q[i] * cb[value];
+    }
+    return dot;
+}
+template<int BITS>
+static void vaccum_small_avx2(float *acc, const uint8_t *packed,
+                              float weight, const float *cb, int padded) {
+    int bit_pos = 0;
+    const uint32_t mask = (1u << BITS) - 1u;
+    for (int i = 0; i < padded; ++i, bit_pos += BITS) {
+        const int byte_pos = bit_pos >> 3;
+        const int offset = bit_pos & 7;
+        uint32_t value = packed[byte_pos];
+        if (offset + BITS <= 8) {
+            value = (value >> (8 - offset - BITS)) & mask;
+        } else {
+            const int first_bits = 8 - offset;
+            value = ((value & ((1u << first_bits) - 1u))
+                     << (BITS - first_bits)) |
+                    (packed[byte_pos + 1] >> (8 - (BITS - first_bits)));
+            value &= mask;
+        }
+        acc[i] += weight * cb[value];
+    }
+}/* ---- AVX2 primitive helpers (identical to attention.cpp) -------------- */
 
 static inline __m256 lup8(const __m256i idx, const __m256 cl, const __m256 ch) {
     const __m256i m7  = _mm256_set1_epi32(7);
@@ -77,6 +121,13 @@ static float kdot1_avx2(const float    *__restrict qr,
                          const uint8_t  *__restrict pk,
                          const __m256   cl, const __m256 ch,
                          int padded) {
+
+    if (padded < 8) {
+        alignas(32) float cb[16];
+        _mm256_storeu_ps(cb, cl);
+        _mm256_storeu_ps(cb + 8, ch);
+        return kdot_small_avx2<BITS>(qr, pk, cb, padded);
+    }
     __m256 s0 = _mm256_setzero_ps();
     int b = 0;
     for (int j = 0; j < padded; j += 8) {
@@ -94,6 +145,16 @@ static void kdot4_quad_avx2(const float    *__restrict qr,
                               const uint8_t  *k2, const uint8_t *k3,
                               const __m256 cl, const __m256 ch,
                               int padded, float out[4]) {
+    if (padded < 16) {
+        alignas(32) float cb[16];
+        _mm256_storeu_ps(cb, cl);
+        _mm256_storeu_ps(cb + 8, ch);
+        out[0] = kdot_small_avx2<BITS>(qr, k0, cb, padded);
+        out[1] = kdot_small_avx2<BITS>(qr, k1, cb, padded);
+        out[2] = kdot_small_avx2<BITS>(qr, k2, cb, padded);
+        out[3] = kdot_small_avx2<BITS>(qr, k3, cb, padded);
+        return;
+    }
     __m256 s0={}, s1={}, s2={}, s3={};
     int b = 0;
     for (int j = 0; j < padded; j += 16) {
@@ -120,6 +181,13 @@ static void vaccum1_avx2(float          *__restrict acc,
                            const uint8_t  *__restrict vp,
                            float ew, const __m256 cl, const __m256 ch,
                            int padded) {
+    if (padded < 8) {
+        alignas(32) float cb[16];
+        _mm256_storeu_ps(cb, cl);
+        _mm256_storeu_ps(cb + 8, ch);
+        vaccum_small_avx2<BITS>(acc, vp, ew, cb, padded);
+        return;
+    }
     __m256 ev = _mm256_set1_ps(ew);
     int b = 0;
     for (int j = 0; j < padded; j += 8) {
@@ -137,6 +205,16 @@ static void vaccum4_avx2(float *__restrict acc,
                            const uint8_t *v2, const uint8_t *v3,
                            float e0, float e1, float e2, float e3,
                            const __m256 cl, const __m256 ch, int padded) {
+    if (padded < 16) {
+        alignas(32) float cb[16];
+        _mm256_storeu_ps(cb, cl);
+        _mm256_storeu_ps(cb + 8, ch);
+        vaccum_small_avx2<BITS>(acc, v0, e0, cb, padded);
+        vaccum_small_avx2<BITS>(acc, v1, e1, cb, padded);
+        vaccum_small_avx2<BITS>(acc, v2, e2, cb, padded);
+        vaccum_small_avx2<BITS>(acc, v3, e3, cb, padded);
+        return;
+    }
     __m256 q0=_mm256_set1_ps(e0), q1=_mm256_set1_ps(e1);
     __m256 q2=_mm256_set1_ps(e2), q3=_mm256_set1_ps(e3);
     int b = 0;
