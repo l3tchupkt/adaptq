@@ -233,12 +233,12 @@ void softmax(float *x, int n) {
     x[i] = expf(x[i] - mx);
     s += x[i];
   }
-  if (s > 0.f && std::isfinite(s)) {
+  if (s > 1e-12f && std::isfinite(s)) {
     float inv = 1.f / s;
     for (int i = 0; i < n; ++i)
       x[i] *= inv;
   } else {
-    float unif = 1.f / (float)n;
+    float unif = n > 0 ? 1.f / (float)n : 0.f;
     for (int i = 0; i < n; ++i)
       x[i] = unif;
   }
@@ -410,7 +410,7 @@ static void compute_avx2(const float *qr, float *acc, const float *cb,
     logits[j] = expf(logits[j] - mx);
     sv += logits[j];
   }
-  float inv = 1.f / sv;
+  float inv = (sv > 1e-12f && std::isfinite(sv)) ? (1.f / sv) : (n > 0 ? 1.f / (float)n : 0.f);
   for (int j = 0; j < n; ++j)
     logits[j] *= inv;
 
@@ -497,7 +497,7 @@ int AttentionHead::compute(const float *q, float *out) const {
       logits[i] = expf(logits[i] - mx);
       sv += logits[i];
     }
-    float inv = (sv > 0.f && std::isfinite(sv)) ? (1.f / sv) : (1.f / (float)n);
+    float inv = (sv > 1e-12f && std::isfinite(sv)) ? (1.f / sv) : (n > 0 ? 1.f / (float)n : 0.f);
     // Weighted V accumulation
     memset(out, 0, dim * sizeof(float));
     for (int i = 0; i < n; ++i) {
@@ -522,7 +522,7 @@ int AttentionHead::compute(const float *q, float *out) const {
     qn += q[i] * q[i];
   qn = sqrtf(qn + 1e-12f);
   {
-    float inv = 1.f / qn;
+    float inv = (qn > 1e-12f) ? (1.f / qn) : 0.f;
     for (int i = 0; i < padded; ++i)
       qr[i] *= inv;
   }

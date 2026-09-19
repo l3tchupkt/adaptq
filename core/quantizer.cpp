@@ -52,7 +52,7 @@ static inline float _quantize_core(const float *x, int dim, int padded,
   for (int i = dim; i < padded; ++i)
     buf[i] = 0.f;
   norm = sqrtf(norm + 1e-12f);
-  float inv = 1.f / norm;
+  float inv = (norm > 1e-12f) ? (1.f / norm) : 0.f;
   for (int i = 0; i < padded; ++i)
     buf[i] *= inv;
 
