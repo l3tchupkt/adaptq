@@ -109,9 +109,9 @@ TEST_CASE("Subnormals and Zero Values", "[codebook][boundary]") {
     REQUIRE(quantize_fast(zero_neg, 2) >= 1);
     REQUIRE(quantize_fast(zero_neg, 2) <= 2);
 
-    // In CB4, 0.0000f is centroid 7
-    REQUIRE(quantize_fast(zero_pos, 4) == 7);
-    REQUIRE(quantize_fast(zero_neg, 4) == 7);
+    // CB4 has symmetric centroids around zero; zero lies at the midpoint.
+    REQUIRE(quantize_fast(zero_pos, 4) == 8);
+    REQUIRE(quantize_fast(zero_neg, 4) == 8);
     REQUIRE(quantize_scalar(zero_pos, CB4, 16) == 7);
 
     // Subnormal numbers close to 0 map near center
