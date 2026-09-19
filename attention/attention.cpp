@@ -244,80 +244,34 @@ void softmax(float *x, int n) {
   }
 }
 
+static inline int unpack_packed_index(const uint8_t *packed, int packed_bytes,
+                                             int index, int bits) {
+  const int bit_offset = index * bits;
+  const int byte_offset = bit_offset >> 3;
+  const int shift = 24 - bits - (bit_offset & 7);
+  uint32_t value = (uint32_t)packed[byte_offset] << 16;
+  if (byte_offset + 1 < packed_bytes)
+    value |= (uint32_t)packed[byte_offset + 1] << 8;
+  if (byte_offset + 2 < packed_bytes)
+    value |= (uint32_t)packed[byte_offset + 2];
+  return (int)((value >> shift) & ((1u << bits) - 1u));
+}
+
 [[maybe_unused]]
 static float kdot_scalar(const float *q, const uint8_t *p, const float *cb,
-                         int nb, int bits) {
+                         int padded, int bits) {
+  const int packed_bytes = (padded * bits + 7) / 8;
   float s = 0.f;
-  if (bits == 2) {
-    for (int i = 0; i < nb; ++i) {
-      uint8_t v = p[i];
-      int j = i << 2;
-      s += q[j] * cb[(v >> 6) & 3] + q[j + 1] * cb[(v >> 4) & 3] +
-           q[j + 2] * cb[(v >> 2) & 3] + q[j + 3] * cb[v & 3];
-    }
-  } else if (bits == 3) {
-    int g = nb / 3;
-    for (int i = 0; i < g; ++i) {
-      const uint8_t *r = p + i * 3;
-      int j = i * 8;
-      s += q[j] * cb[(r[0] >> 5) & 7] + q[j + 1] * cb[(r[0] >> 2) & 7] +
-           q[j + 2] * cb[((r[0] & 3) << 1) | (r[1] >> 7)] +
-           q[j + 3] * cb[(r[1] >> 4) & 7] + q[j + 4] * cb[(r[1] >> 1) & 7] +
-           q[j + 5] * cb[((r[1] & 1) << 2) | (r[2] >> 6)] +
-           q[j + 6] * cb[(r[2] >> 3) & 7] + q[j + 7] * cb[r[2] & 7];
-    }
-  } else {
-    for (int i = 0; i + 3 < nb; i += 4) {
-      uint8_t b0 = p[i], b1 = p[i + 1], b2 = p[i + 2], b3 = p[i + 3];
-      int j = i << 1;
-      s += q[j] * cb[b0 >> 4] + q[j + 1] * cb[b0 & 15] +
-           q[j + 2] * cb[b1 >> 4] + q[j + 3] * cb[b1 & 15] +
-           q[j + 4] * cb[b2 >> 4] + q[j + 5] * cb[b2 & 15] +
-           q[j + 6] * cb[b3 >> 4] + q[j + 7] * cb[b3 & 15];
-    }
-  }
+  for (int i = 0; i < padded; ++i)
+    s += q[i] * cb[unpack_packed_index(p, packed_bytes, i, bits)];
   return s;
 }
 
 static void vaccum_scalar(float *acc, const uint8_t *vp, const float *ecb,
-                          int nb, int bits) {
-  if (bits == 2) {
-    for (int b = 0; b < nb; ++b) {
-      uint8_t v = vp[b];
-      int j = b << 2;
-      acc[j] += ecb[(v >> 6) & 3];
-      acc[j + 1] += ecb[(v >> 4) & 3];
-      acc[j + 2] += ecb[(v >> 2) & 3];
-      acc[j + 3] += ecb[v & 3];
-    }
-  } else if (bits == 3) {
-    int g = nb / 3;
-    for (int i = 0; i < g; ++i) {
-      const uint8_t *r = vp + i * 3;
-      int j = i * 8;
-      acc[j] += ecb[(r[0] >> 5) & 7];
-      acc[j + 1] += ecb[(r[0] >> 2) & 7];
-      acc[j + 2] += ecb[((r[0] & 3) << 1) | (r[1] >> 7)];
-      acc[j + 3] += ecb[(r[1] >> 4) & 7];
-      acc[j + 4] += ecb[(r[1] >> 1) & 7];
-      acc[j + 5] += ecb[((r[1] & 1) << 2) | (r[2] >> 6)];
-      acc[j + 6] += ecb[(r[2] >> 3) & 7];
-      acc[j + 7] += ecb[r[2] & 7];
-    }
-  } else {
-    for (int b = 0; b + 3 < nb; b += 4) {
-      uint8_t b0 = vp[b], b1 = vp[b + 1], b2 = vp[b + 2], b3 = vp[b + 3];
-      int j = b << 1;
-      acc[j] += ecb[b0 >> 4];
-      acc[j + 1] += ecb[b0 & 15];
-      acc[j + 2] += ecb[b1 >> 4];
-      acc[j + 3] += ecb[b1 & 15];
-      acc[j + 4] += ecb[b2 >> 4];
-      acc[j + 5] += ecb[b2 & 15];
-      acc[j + 6] += ecb[b3 >> 4];
-      acc[j + 7] += ecb[b3 & 15];
-    }
-  }
+                          int padded, int bits) {
+  const int packed_bytes = (padded * bits + 7) / 8;
+  for (int i = 0; i < padded; ++i)
+    acc[i] += ecb[unpack_packed_index(vp, packed_bytes, i, bits)];
 }
 
 // ---------------------------------------------------------------------------
@@ -548,7 +502,7 @@ int AttentionHead::compute(const float *q, float *out) const {
 #if ADAPTQ_HAS_AVX2
   bool use_avx2 = true;
 #if defined(__GNUC__) || defined(__clang__)
-  use_avx2 = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+  use_avx2 = padded >= 16 && __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
 #endif
   if (use_avx2) {
   if (bits == 4) {
@@ -585,7 +539,7 @@ int AttentionHead::compute(const float *q, float *out) const {
       ADAPTQ_PREFETCH(kb + (size_t)ps * pb);
       ADAPTQ_PREFETCH(vb + (size_t)ps * pb);
     }
-    logits[i] = kdot_scalar(qr, kb + (size_t)s * pb, cb, pb, bits) * attn_s *
+    logits[i] = kdot_scalar(qr, kb + (size_t)s * pb, cb, padded, bits) * attn_s *
                 kv_buf.k_scale[s];
   }
   softmax(logits, n);
@@ -596,7 +550,7 @@ int AttentionHead::compute(const float *q, float *out) const {
     float ew = logits[i] * kv_buf.v_scale[s] * isp;
     for (int k = 0; k < cb_sz; ++k)
       ecb[k] = ew * cb[k];
-    vaccum_scalar(acc, vb + (size_t)s * pb, ecb, pb, bits);
+    vaccum_scalar(acc, vb + (size_t)s * pb, ecb, padded, bits);
   }
   fwht_inverse(acc, quant.D.data(), padded);
   memcpy(out, acc, dim * sizeof(float));

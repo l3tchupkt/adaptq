@@ -145,6 +145,8 @@ static void pack4(const uint8_t *idx, int d, uint8_t *dst) {
   int n = d >> 1;
   for (int i = 0; i < n; ++i)
     dst[i] = (uint8_t)((idx[i * 2] << 4) | (idx[i * 2 + 1] & 0xF));
+  if (d & 1)
+    dst[n] = (uint8_t)((idx[n * 2] & 0xF) << 4);
 }
 static void unpack4(const uint8_t *src, int d, uint8_t *idx) {
   int n = d >> 1;
@@ -152,6 +154,8 @@ static void unpack4(const uint8_t *src, int d, uint8_t *idx) {
     idx[i * 2] = src[i] >> 4;
     idx[i * 2 + 1] = src[i] & 0xF;
   }
+  if (d & 1)
+    idx[n * 2] = src[n] >> 4;
 }
 
 static void pack2(const uint8_t *idx, int d, uint8_t *dst) {
@@ -159,6 +163,14 @@ static void pack2(const uint8_t *idx, int d, uint8_t *dst) {
   for (int i = 0; i < n; ++i)
     dst[i] = (uint8_t)((idx[i * 4] << 6) | (idx[i * 4 + 1] << 4) |
                        (idx[i * 4 + 2] << 2) | idx[i * 4 + 3]);
+
+  const int rem = d & 3;
+  if (rem) {
+    uint8_t tail = 0;
+    for (int i = 0; i < rem; ++i)
+      tail |= (uint8_t)((idx[n * 4 + i] & 3) << (6 - 2 * i));
+    dst[n] = tail;
+  }
 }
 static void unpack2(const uint8_t *src, int d, uint8_t *idx) {
   int n = d >> 2;
@@ -167,6 +179,13 @@ static void unpack2(const uint8_t *src, int d, uint8_t *idx) {
     idx[i * 4 + 1] = (src[i] >> 4) & 3;
     idx[i * 4 + 2] = (src[i] >> 2) & 3;
     idx[i * 4 + 3] = src[i] & 3;
+  }
+
+  const int rem = d & 3;
+  if (rem) {
+    const uint8_t tail = src[n];
+    for (int i = 0; i < rem; ++i)
+      idx[n * 4 + i] = (tail >> (6 - 2 * i)) & 3;
   }
 }
 
@@ -178,6 +197,16 @@ static void pack3(const uint8_t *idx, int d, uint8_t *dst) {
     p[0] = (uint8_t)((s[0] << 5) | (s[1] << 2) | (s[2] >> 1));
     p[1] = (uint8_t)((s[2] << 7) | (s[3] << 4) | (s[4] << 1) | (s[5] >> 2));
     p[2] = (uint8_t)((s[5] << 6) | (s[6] << 3) | s[7]);
+  }
+
+  const int rem = d & 7;
+  if (rem) {
+    const int tail_bytes = (rem * 3 + 7) / 8;
+    uint32_t value = 0;
+    for (int i = 0; i < rem; ++i)
+      value |= (uint32_t)(idx[g * 8 + i] & 7) << (21 - 3 * i);
+    for (int i = 0; i < tail_bytes; ++i)
+      dst[g * 3 + i] = (uint8_t)(value >> (16 - 8 * i));
   }
 }
 static void unpack3(const uint8_t *src, int d, uint8_t *idx) {
@@ -193,6 +222,16 @@ static void unpack3(const uint8_t *src, int d, uint8_t *idx) {
     s[5] = ((p[1] & 1) << 2) | (p[2] >> 6);
     s[6] = (p[2] >> 3) & 7;
     s[7] = p[2] & 7;
+  }
+
+  const int rem = d & 7;
+  if (rem) {
+    const int tail_bytes = (rem * 3 + 7) / 8;
+    uint32_t value = 0;
+    for (int i = 0; i < tail_bytes; ++i)
+      value |= (uint32_t)src[g * 3 + i] << (16 - 8 * i);
+    for (int i = 0; i < rem; ++i)
+      idx[g * 8 + i] = (uint8_t)((value >> (21 - 3 * i)) & 7);
   }
 }
 

@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cmath>
 #include <string>
+#include <vector>
 
 /* -------------------------------------------------------------------------
  * tests/unit/test_api.cpp
@@ -15,6 +16,29 @@ static void fill_vec(float *v, int n, float val) {
 }
 
 /* ---- Single head -------------------------------------------------------- */
+
+TEST_CASE("Attention handles small head dimensions for every bit width", "[api][avx2][boundary]") {
+    for (int bits : {2, 3, 4}) {
+        for (int dim : {1, 2, 4, 8}) {
+            adaptq_ctx_t h = adaptq_create(dim, bits, 8, 42, 0.f, 0);
+            REQUIRE(h != nullptr);
+
+            std::vector<float> k(dim), v(dim), q(dim), out(dim);
+            for (int i = 0; i < dim; ++i) {
+                k[i] = 0.1f * (float)(i + 1);
+                v[i] = 0.2f * (float)(i + 1);
+                q[i] = 0.3f * (float)(i + 1);
+            }
+
+            adaptq_append(h, k.data(), v.data(), 0);
+            REQUIRE(adaptq_compute(h, q.data(), out.data()) == 1);
+            for (float value : out)
+                REQUIRE(std::isfinite(value));
+
+            adaptq_destroy(h);
+        }
+    }
+}
 
 TEST_CASE("adaptq_create returns non-null handle", "[api]") {
     adaptq_ctx_t h = adaptq_create(128, 4, 1024, 42, 0.f, 0);

@@ -66,6 +66,22 @@ TEST_CASE("3-bit pack/unpack round-trip (padded must be mult of 8)", "[packing]"
     }
 }
 
+TEST_CASE("Small padded dimensions preserve packed indices", "[packing][boundary]") {
+    for (int bits : {2, 3, 4}) {
+        for (int padded : {1, 2, 4, 8}) {
+            auto indices = random_indices(padded, bits,
+                                           0x12340000ULL ^ (uint64_t)(bits << 8) ^
+                                           (uint64_t)padded);
+            const int packed_bytes = (padded * bits + 7) / 8;
+            std::vector<uint8_t> packed(packed_bytes, 0), unpacked(padded, 0);
+            pack_indices(indices.data(), padded, bits, packed.data());
+            unpack_indices(packed.data(), padded, bits, unpacked.data());
+            CAPTURE(bits, padded);
+            REQUIRE(max_err_u8(indices.data(), unpacked.data(), padded) == 0);
+        }
+    }
+}
+
 TEST_CASE("Unpacked indices are in [0, 2^bits-1]", "[packing]") {
     for (int bits : {2, 3, 4}) {
         int padded = 128;

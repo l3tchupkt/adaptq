@@ -40,6 +40,36 @@ static inline float hsum8(__m256 v) {
     return _mm_cvtss_f32(_mm_hadd_ps(lo, lo));
 }
 
+static int unpack_packed_index_scalar(const uint8_t *packed, int packed_bytes,
+                                      int index, int bits) {
+    const int bit_offset = index * bits;
+    const int byte_offset = bit_offset >> 3;
+    const int shift = 24 - bits - (bit_offset & 7);
+    uint32_t value = (uint32_t)packed[byte_offset] << 16;
+    if (byte_offset + 1 < packed_bytes)
+        value |= (uint32_t)packed[byte_offset + 1] << 8;
+    if (byte_offset + 2 < packed_bytes)
+        value |= (uint32_t)packed[byte_offset + 2];
+    return (int)((value >> shift) & ((1u << bits) - 1u));
+}
+
+static float kdot_small_scalar(const float *q, const uint8_t *packed,
+                               const float *cb, int padded, int bits) {
+    const int packed_bytes = (padded * bits + 7) / 8;
+    float dot = 0.f;
+    for (int i = 0; i < padded; ++i)
+        dot += q[i] * cb[unpack_packed_index_scalar(packed, packed_bytes, i, bits)];
+    return dot;
+}
+
+static void vaccum_small_scalar(float *acc, const uint8_t *packed,
+                                float weight, const float *cb,
+                                int padded, int bits) {
+    const int packed_bytes = (padded * bits + 7) / 8;
+    for (int i = 0; i < padded; ++i)
+        acc[i] += weight * cb[unpack_packed_index_scalar(packed, packed_bytes, i, bits)];
+}
+
 /* ---- Decode<BITS>: unpack 8 indices from packed bytes into int32×8 ---- */
 template<int BITS> struct Decode;
 
@@ -178,6 +208,13 @@ public:
                     int N, int padded, int bits,
                     float *logits_out) override {
         const float *cb = get_codebook(bits);
+        if (padded < 16) {
+            for (int i = 0; i < N; ++i)
+                logits_out[i] = kdot_small_scalar(q_rot, kr[i].data, cb,
+                                                  padded, bits) *
+                                kr[i].scale / (float)padded;
+            return;
+        }
         __m256 cl = _mm256_loadu_ps(cb), ch = _mm256_loadu_ps(cb + 8);
         int i = 0;
         for (; i + 3 < N; i += 4) {
@@ -206,8 +243,15 @@ public:
                       const float          *weights,
                       int N, int padded, int bits) override {
         const float *cb = get_codebook(bits);
-        __m256 cl = _mm256_loadu_ps(cb), ch = _mm256_loadu_ps(cb + 8);
         memset(acc, 0, (size_t)padded * sizeof(float));
+        if (padded < 16) {
+            for (int i = 0; i < N; ++i) {
+                const float weight = weights[i] * vr[i].scale;
+                vaccum_small_scalar(acc, vr[i].data, weight, cb, padded, bits);
+            }
+            return;
+        }
+        __m256 cl = _mm256_loadu_ps(cb), ch = _mm256_loadu_ps(cb + 8);
         int i = 0;
         for (; i + 3 < N; i += 4) {
             float e0 = weights[i]   * vr[i].scale;
