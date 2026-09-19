@@ -292,6 +292,18 @@ TEST_CASE("adaptq_version returns non-empty string", "[api]") {
     REQUIRE(std::string(ver).size() > 0);
 }
 
+
+TEST_CASE("adaptq AVX2 feature matches reported version", "[api]") {
+    const unsigned f = adaptq_features();
+    const std::string version = adaptq_version();
+#ifdef ADAPTQ_HAS_AVX2_BACKEND
+    REQUIRE((f & ADAPTQ_FEAT_AVX2) != 0);
+    REQUIRE(version == "3.2.0-avx2");
+#else
+    REQUIRE((f & ADAPTQ_FEAT_AVX2) == 0);
+    REQUIRE(version == "3.2.0-scalar");
+#endif
+}
 TEST_CASE("adaptq_features returns valid bitmask", "[api]") {
     unsigned f = adaptq_features();
     REQUIRE((f & ADAPTQ_FEAT_HYBRID)   != 0);
@@ -320,7 +332,7 @@ TEST_CASE("adaptq context handles sizes around and above 65536 tokens", "[api][l
             adaptq_append(h, k, v, current_size);
             current_size++;
         }
-        
+
         // Compute should not assert/crash and return exactly the target size
         int n = adaptq_compute(h, q, out);
         REQUIRE(n == target);
@@ -339,7 +351,7 @@ TEST_CASE("Max-Lloyd codebooks handle boundary conditions and outlier vectors wi
     float k_zeros[64] = {}, v_zeros[64] = {};
     float k_nans[64], v_nans[64];
     float k_huge[64], v_huge[64];
-    
+
     for (int i = 0; i < 64; ++i) {
         k_nans[i] = std::nanf("");
         v_nans[i] = std::nanf("");
