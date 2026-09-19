@@ -158,6 +158,22 @@ target_include_directories(adapTQ_demo PRIVATE
 )
 
 # ---------------------------------------------------------------------------
+# Runtime benchmark executable
+# ---------------------------------------------------------------------------
+# Measures the legacy AttentionHead path against RuntimeContext, plus
+# runtime backend selection and scalar/accelerated backend behavior.
+add_executable(adapTQ_runtime_bench benchmarks/runtime_benchmark.cpp)
+target_link_libraries(adapTQ_runtime_bench PRIVATE adapTQ_runtime adapTQ_core)
+target_include_directories(adapTQ_runtime_bench PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime
+    ${CMAKE_CURRENT_SOURCE_DIR}/storage
+    ${CMAKE_CURRENT_SOURCE_DIR}/strategies
+    ${CMAKE_CURRENT_SOURCE_DIR}/kernels
+)
+
+# ---------------------------------------------------------------------------
 # Tests — Catch2 via find_package first, then FetchContent fallback
 # ---------------------------------------------------------------------------
 option(ADAPTQ_BUILD_TESTS "Build unit and conformance tests" ON)

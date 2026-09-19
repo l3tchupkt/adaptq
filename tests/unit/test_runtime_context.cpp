@@ -11,6 +11,9 @@
 
 /* Pull in RuntimeContext (which includes strategy/storage implementations). */
 #include "../../runtime/runtime_context.h"
+#include "../../include/adaptq/kernel.h"
+#include <cstdlib>
+#include <string>
 
 using namespace adaptq;
 
@@ -194,6 +197,52 @@ TEST_CASE("RuntimeContext: fp_passthrough strategy init", "[runtime]") {
     ComputeMetrics m = ctx.compute(0, 0, q.data(), out.data());
     REQUIRE(m.n_tokens_used == 1);
     REQUIRE(m.quality >= 0.f); /* FP32 quality = 1.0 */
+}
+
+TEST_CASE("RuntimeContext: HAR compute matches scalar fallback when AVX2 is selected", "[runtime][kernel][avx2]") {
+#if defined(_WIN32)
+    _putenv_s("ADAPTQ_FORCE_SCALAR", "");
+#else
+    unsetenv("ADAPTQ_FORCE_SCALAR");
+#endif
+    IKernelBackend *auto_backend = select_kernel_backend();
+    if (!auto_backend || std::string(auto_backend->name()) != "avx2") {
+        SUCCEED("AVX2 backend is not selected on this host");
+        return;
+    }
+
+    RuntimeContextConfig cfg = make_cfg(1, 1, 64, 4, 8);
+    cfg.v_mass = 0.f;
+
+#if defined(_WIN32)
+    _putenv_s("ADAPTQ_FORCE_SCALAR", "1");
+#else
+    setenv("ADAPTQ_FORCE_SCALAR", "1", 1);
+#endif
+    RuntimeContext scalar_ctx;
+    scalar_ctx.init(cfg);
+
+#if defined(_WIN32)
+    _putenv_s("ADAPTQ_FORCE_SCALAR", "");
+#else
+    unsetenv("ADAPTQ_FORCE_SCALAR");
+#endif
+    RuntimeContext avx_ctx;
+    avx_ctx.init(cfg);
+
+    std::vector<float> k(64), v(64), q(64), scalar_out(64), avx_out(64);
+    for (int t = 0; t < 4; ++t) {
+        rand_vec(k.data(), 64, static_cast<unsigned>(100 + t));
+        rand_vec(v.data(), 64, static_cast<unsigned>(200 + t));
+        scalar_ctx.append(0, 0, k.data(), v.data());
+        avx_ctx.append(0, 0, k.data(), v.data());
+    }
+    rand_vec(q.data(), 64, 999);
+    scalar_ctx.compute(0, 0, q.data(), scalar_out.data());
+    avx_ctx.compute(0, 0, q.data(), avx_out.data());
+
+    for (int i = 0; i < 64; ++i)
+        REQUIRE(std::abs(scalar_out[i] - avx_out[i]) <= 1e-4f);
 }
 
 TEST_CASE("RuntimeContext: strategy_factory_by_name registry", "[runtime]") {
