@@ -217,7 +217,7 @@ public:
         float qn = 0.f;
         for (int i = 0; i < dim; ++i) qn += q[i] * q[i];
         qn = sqrtf(qn + 1e-12f);
-        float inv_qn = 1.f / qn;
+        float inv_qn = (qn > 1e-12f) ? (1.f / qn) : 0.f;
         for (int i = 0; i < padded; ++i) qr[i] *= inv_qn;
         fwht_forward(qr, quant_->D.data(), padded);
         float sp = sqrtf((float)padded);
@@ -243,7 +243,7 @@ public:
             logits[i] = expf(logits[i] - mx);
             sv += logits[i];
         }
-        float inv_s = 1.f / sv;
+        float inv_s = (sv > 1e-12f && std::isfinite(sv)) ? (1.f / sv) : (n > 0 ? 1.f / (float)n : 0.f);
         for (int i = 0; i < n; ++i) logits[i] *= inv_s;
 
         /* 4. V accumulation with optional sparse-V */

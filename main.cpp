@@ -67,7 +67,7 @@ static void fp16_attention(const float *q,
     log_buf[i] = expf(log_buf[i] - mx);
     sum += log_buf[i];
   }
-  float inv = 1.f / sum;
+  float inv = (sum > 1e-12f && std::isfinite(sum)) ? (1.f / sum) : (seq > 0 ? 1.f / (float)seq : 0.f);
   memset(out, 0, dim * sizeof(float));
   for (int i = 0; i < seq; ++i) {
     float w = log_buf[i] * inv;
