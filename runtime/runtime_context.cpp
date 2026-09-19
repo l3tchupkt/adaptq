@@ -6,7 +6,6 @@
 #include "../include/codebook.h"
 #include "../include/fwht.h"
 #include <algorithm>
-#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -230,9 +229,6 @@ void RuntimeContext::append(int          layer,
                             int          head,
                             const float *k_vec,
                             const float *v_vec) {
-    assert(layer >= 0 && layer < cfg_.n_layers);
-    assert(head  >= 0 && head  < cfg_.n_heads);
-
     int idx = head_idx(layer, head);
     ExecutionContext ctx = make_ctx(layer, head);
 
@@ -295,12 +291,10 @@ ComputeMetrics RuntimeContext::compute(int          layer,
                                        int          head,
                                        const float *q_vec,
                                        float       *out) {
-    assert(layer >= 0 && layer < cfg_.n_layers);
-    assert(head  >= 0 && head  < cfg_.n_heads);
+    int idx = head_idx(layer, head);
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    int idx = head_idx(layer, head);
     int n   = cache_sizes_[idx];
 
     ExecutionContext ctx = make_ctx(layer, head);

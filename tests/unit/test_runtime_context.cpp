@@ -80,7 +80,10 @@ TEST_CASE("RuntimeContext: rejects invalid layer and head indices", "[runtime][s
     ctx.init(make_cfg(2, 2));
     REQUIRE_THROWS_AS(ctx.get_strategy(-1, 0), std::out_of_range);
     REQUIRE_THROWS_AS(ctx.get_storage(0, 2), std::out_of_range);
+    REQUIRE_THROWS_AS(ctx.append(2, 0, nullptr, nullptr), std::out_of_range);
+    REQUIRE_THROWS_AS(ctx.append(0, 2, nullptr, nullptr), std::out_of_range);
     REQUIRE_THROWS_AS(ctx.compute(2, 0, nullptr, nullptr), std::out_of_range);
+    REQUIRE_THROWS_AS(ctx.compute(0, 2, nullptr, nullptr), std::out_of_range);
 }
 
 TEST_CASE("RuntimeContext: append increases storage usage", "[runtime]") {

@@ -2,6 +2,7 @@
 #include "quantizer.h"
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <new>
 #include <vector>
 
@@ -9,8 +10,13 @@
 template <class T, size_t Align = 64> struct AlignedAllocator {
   using value_type = T;
   T *allocate(size_t n) {
+    constexpr size_t max_size = std::numeric_limits<size_t>::max();
+    constexpr size_t alignment_overhead = Align - 1;
+    if (n > (max_size - alignment_overhead) / sizeof(T))
+      throw std::bad_alloc();
+
     size_t bytes = n * sizeof(T);
-    bytes = (bytes + Align - 1) & ~(Align - 1);
+    bytes = (bytes + alignment_overhead) & ~alignment_overhead;
     void *p = nullptr;
 #if defined(_MSC_VER)
     p = _aligned_malloc(bytes, Align);

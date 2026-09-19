@@ -362,7 +362,7 @@ TEST_CASE("Max-Lloyd codebooks handle boundary conditions and outlier vectors wi
 
 TEST_CASE("AlignedAllocator throws std::bad_alloc on huge allocation request", "[allocator][safety]") {
     AlignedAllocator<uint8_t, 64> alloc;
-    REQUIRE_THROWS_AS(alloc.allocate(size_t(-1) / 2), std::bad_alloc);
+    REQUIRE_THROWS_AS(alloc.allocate(size_t(-1)), std::bad_alloc);
 }
 
 TEST_CASE("KVFlatBuffer handles initialization, insert, and cleanup safely", "[cache][flatbuffer]") {

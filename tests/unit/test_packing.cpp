@@ -1,5 +1,6 @@
 /* Catch2 v3 — link against Catch2::Catch2WithMain */
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include "../../include/quantizer.h"
 #include "../../include/codebook.h"
 #include <cmath>
@@ -78,6 +79,89 @@ TEST_CASE("Unpacked indices are in [0, 2^bits-1]", "[packing]") {
         for (int i = 0; i < padded; ++i) {
             CAPTURE(bits, i, (int)unpacked[i]);
             REQUIRE((int)unpacked[i] <= max_val);
+        }
+    }
+}
+
+static void reference_dequantize(const Quantizer &quantizer,
+                                const std::vector<uint8_t> &packed, int padded,
+                                int bits, float scale, std::vector<float> &out) {
+    std::vector<uint8_t> indices(padded);
+    unpack_indices(packed.data(), padded, bits, indices.data());
+
+    std::vector<float> buf(padded);
+    const float inv_sq = 1.f / std::sqrt((float)padded);
+    const float *cb = get_codebook(bits);
+    for (int i = 0; i < padded; ++i)
+        buf[i] = cb[indices[i]] * inv_sq;
+
+    fwht_inverse(buf.data(), quantizer.D.data(), padded);
+    out.resize(quantizer.dim);
+    for (int i = 0; i < quantizer.dim; ++i)
+        out[i] = buf[i] * scale;
+}
+
+TEST_CASE("Dequantization SIMD path matches scalar reconstruction",
+          "[quantizer][avx2][dequantize]") {
+    for (int dim : {33, 64, 127, 128}) {
+        Quantizer q;
+        q.init(dim, 0xD311AULL ^ (uint64_t)dim);
+        const int padded = q.padded;
+
+        for (int bits : {2, 3, 4}) {
+            std::vector<uint8_t> indices(padded);
+            for (int i = 0; i < padded; ++i)
+                indices[i] = (uint8_t)((i * 5 + bits + dim) & ((1 << bits) - 1));
+
+            const int packed_bytes = (padded * bits + 7) / 8;
+            std::vector<uint8_t> packed(packed_bytes);
+            pack_indices(indices.data(), padded, bits, packed.data());
+
+            std::vector<float> expected;
+            reference_dequantize(q, packed, padded, bits, 1.25f, expected);
+
+            QuantizedVec quantized;
+            quantized.data = packed;
+            quantized.scale = 1.25f;
+            quantized.dim = padded;
+            quantized.bits = bits;
+
+            std::vector<float> actual(dim, 0.f);
+            q.dequantize(quantized, actual.data());
+
+            CAPTURE(dim, bits);
+            REQUIRE(actual.size() == expected.size());
+            for (int i = 0; i < dim; ++i)
+                REQUIRE(actual[i] == Catch::Approx(expected[i]).epsilon(1e-6f));
+        }
+    }
+}
+
+TEST_CASE("Raw dequantization SIMD path matches scalar reconstruction",
+          "[quantizer][avx2][dequantize]") {
+    for (int dim : {33, 64, 127, 128}) {
+        Quantizer q;
+        q.init(dim, 0x5A17ULL ^ (uint64_t)dim);
+        const int padded = q.padded;
+
+        for (int bits : {2, 3, 4}) {
+            std::vector<uint8_t> indices(padded);
+            for (int i = 0; i < padded; ++i)
+                indices[i] = (uint8_t)((i * 7 + bits) & ((1 << bits) - 1));
+
+            const int packed_bytes = (padded * bits + 7) / 8;
+            std::vector<uint8_t> packed(packed_bytes);
+            pack_indices(indices.data(), padded, bits, packed.data());
+
+            std::vector<float> expected;
+            reference_dequantize(q, packed, padded, bits, 0.75f, expected);
+
+            std::vector<float> actual(dim, 0.f);
+            q.dequantize_raw(packed.data(), 0.75f, padded, bits, actual.data());
+
+            CAPTURE(dim, bits);
+            for (int i = 0; i < dim; ++i)
+                REQUIRE(actual[i] == Catch::Approx(expected[i]).epsilon(1e-6f));
         }
     }
 }
