@@ -6,6 +6,7 @@
 #include <cstring>
 #include <stdexcept>
 
+
 // Maximum padded dimension supported by thread-local scratch buffers.
 // padded = next_pow2(head_dim). If head_dim > 512, padded > 1024 at 2-bit.
 // Increase this constant (and recompile) if you need larger head dims.
@@ -17,6 +18,160 @@ static_assert(ADAPTQ_TL_BUF_FLOATS >= 1024,
 
 static thread_local float   tl_float_buf[ADAPTQ_TL_BUF_FLOATS];
 static thread_local uint8_t tl_idx_buf[ADAPTQ_TL_BUF_BYTES];
+
+#if (defined(__GNUC__) || defined(__clang__)) && \
+    (defined(__x86_64__) || defined(__i386__))
+#include <immintrin.h>
+#pragma GCC push_options
+#pragma GCC target("avx2,fma")
+
+static inline float hsum8_quantize(__m256 value) {
+  __m128 lo = _mm256_castps256_ps128(value);
+  __m128 hi = _mm256_extractf128_ps(value, 1);
+  lo = _mm_add_ps(lo, hi);
+  lo = _mm_hadd_ps(lo, lo);
+  return _mm_cvtss_f32(_mm_hadd_ps(lo, lo));
+}
+
+static inline __m256i quantize8_avx2(__m256 value, const float *thresholds,
+                                     int bits) {
+  const int threshold_count = (1 << bits) - 1;
+  __m256i indices = _mm256_setzero_si256();
+
+  for (int i = 0; i < threshold_count; ++i) {
+    const __m256 threshold = _mm256_set1_ps(thresholds[i]);
+    const __m256 mask = _mm256_cmp_ps(value, threshold, _CMP_GE_OQ);
+    indices = _mm256_sub_epi32(indices, _mm256_castps_si256(mask));
+  }
+
+  const __m256 nan_mask = _mm256_cmp_ps(value, value, _CMP_UNORD_Q);
+  const __m256i nan_indices =
+      bits == 2 ? _mm256_set1_epi32(1)
+                : bits == 3 ? _mm256_set1_epi32(3)
+                             : _mm256_set1_epi32(7);
+
+  return _mm256_or_si256(
+      _mm256_andnot_si256(_mm256_castps_si256(nan_mask), indices),
+      _mm256_and_si256(_mm256_castps_si256(nan_mask), nan_indices));
+}
+
+static bool quantize_core_avx2(const float *x, int dim, int padded,
+                               const int8_t *D_vec, int bits,
+                               uint8_t *idx_out, float *buf,
+                               float *scale_out) {
+  if (bits < 2 || bits > 4)
+    return false;
+
+  __m256 norm_acc0 = _mm256_setzero_ps();
+  __m256 norm_acc1 = _mm256_setzero_ps();
+  int i = 0;
+  for (; i + 15 < dim; i += 16) {
+    const __m256 x0 = _mm256_loadu_ps(x + i);
+    const __m256 x1 = _mm256_loadu_ps(x + i + 8);
+    norm_acc0 = _mm256_add_ps(norm_acc0, _mm256_mul_ps(x0, x0));
+    norm_acc1 = _mm256_add_ps(norm_acc1, _mm256_mul_ps(x1, x1));
+    _mm256_storeu_ps(buf + i, x0);
+    _mm256_storeu_ps(buf + i + 8, x1);
+  }
+  for (; i + 7 < dim; i += 8) {
+    const __m256 value = _mm256_loadu_ps(x + i);
+    norm_acc0 = _mm256_add_ps(norm_acc0, _mm256_mul_ps(value, value));
+    _mm256_storeu_ps(buf + i, value);
+  }
+
+  float norm = hsum8_quantize(_mm256_add_ps(norm_acc0, norm_acc1));
+  for (; i < dim; ++i) {
+    buf[i] = x[i];
+    norm += x[i] * x[i];
+  }
+  for (; i < padded; ++i)
+    buf[i] = 0.f;
+
+  norm = sqrtf(norm + 1e-12f);
+  if (!std::isfinite(norm))
+    return false;
+
+  const float inv_norm = 1.f / norm;
+  const __m256 inv_norm_vec = _mm256_set1_ps(inv_norm);
+  for (i = 0; i + 7 < padded; i += 8) {
+    _mm256_storeu_ps(
+        buf + i, _mm256_mul_ps(_mm256_loadu_ps(buf + i), inv_norm_vec));
+  }
+  for (; i < padded; ++i)
+    buf[i] *= inv_norm;
+
+  fwht_forward(buf, D_vec, padded);
+
+  const float stddev_scale = sqrtf((float)padded);
+  const __m256 scale_vec = _mm256_set1_ps(stddev_scale);
+  __m256 sum_acc0 = _mm256_setzero_ps();
+  __m256 sum_acc1 = _mm256_setzero_ps();
+  i = 0;
+  for (; i + 15 < padded; i += 16) {
+    const __m256 v0 = _mm256_mul_ps(_mm256_loadu_ps(buf + i), scale_vec);
+    const __m256 v1 =
+        _mm256_mul_ps(_mm256_loadu_ps(buf + i + 8), scale_vec);
+    sum_acc0 = _mm256_add_ps(sum_acc0, _mm256_mul_ps(v0, v0));
+    sum_acc1 = _mm256_add_ps(sum_acc1, _mm256_mul_ps(v1, v1));
+  }
+  for (; i + 7 < padded; i += 8) {
+    const __m256 v =
+        _mm256_mul_ps(_mm256_loadu_ps(buf + i), scale_vec);
+    sum_acc0 = _mm256_add_ps(sum_acc0, _mm256_mul_ps(v, v));
+  }
+
+  float sum2 = hsum8_quantize(_mm256_add_ps(sum_acc0, sum_acc1));
+  for (; i < padded; ++i) {
+    const float v = buf[i] * stddev_scale;
+    sum2 += v * v;
+  }
+
+  const float sigma = sqrtf(sum2 / (float)padded + 1e-12f);
+  const float clip = 3.f * sigma;
+  if (!std::isfinite(clip))
+    return false;
+  const float inv_clip = 1.f / (clip + 1e-12f);
+
+  float thresholds[15] = {};
+  const float *cb = get_codebook(bits);
+  const int threshold_count = codebook_size(bits) - 1;
+  for (int t = 0; t < threshold_count; ++t)
+    thresholds[t] = 0.5f * (cb[t] + cb[t + 1]);
+
+  i = 0;
+  const __m256 clip_vec = _mm256_set1_ps(clip);
+  const __m256 neg_clip_vec = _mm256_set1_ps(-clip);
+  const __m256 inv_clip_vec = _mm256_set1_ps(inv_clip);
+  for (; i + 7 < padded; i += 8) {
+    __m256 value =
+        _mm256_mul_ps(_mm256_loadu_ps(buf + i), scale_vec);
+    value = _mm256_min_ps(value, clip_vec);
+    value = _mm256_max_ps(value, neg_clip_vec);
+    value = _mm256_mul_ps(value, inv_clip_vec);
+
+    const __m256i indices = quantize8_avx2(value, thresholds, bits);
+    alignas(32) uint32_t lanes[8];
+    _mm256_store_si256(reinterpret_cast<__m256i *>(lanes), indices);
+    for (int lane = 0; lane < 8; ++lane)
+      idx_out[i + lane] = (uint8_t)lanes[lane];
+  }
+
+  for (; i < padded; ++i) {
+    float value = buf[i] * stddev_scale;
+    if (value > clip)
+      value = clip;
+    if (value < -clip)
+      value = -clip;
+    value *= inv_clip;
+    idx_out[i] = (uint8_t)quantize_fast(value, bits);
+  }
+
+  *scale_out = norm * clip;
+  return true;
+}
+
+#pragma GCC pop_options
+#endif
 
 void Quantizer::init(int d, uint64_t seed) {
   if (d <= 0) {
@@ -38,12 +193,11 @@ void Quantizer::init(int d, uint64_t seed) {
 // quantise, return packed indices and effective scale.
 // No heap allocs — uses thread_local scratch.
 // ---------------------------------------------------------------------------
-static inline float _quantize_core(const float *x, int dim, int padded,
-                                   const int8_t *D_vec, int bits,
-                                   uint8_t *idx_out) {
+static inline float _quantize_core_scalar(const float *x, int dim,
+                                         int padded, const int8_t *D_vec,
+                                         int bits, uint8_t *idx_out) {
   float *buf = tl_float_buf;
 
-  // L2-normalise
   float norm = 0.f;
   for (int i = 0; i < dim; ++i) {
     buf[i] = x[i];
@@ -58,9 +212,6 @@ static inline float _quantize_core(const float *x, int dim, int padded,
 
   fwht_forward(buf, D_vec, padded);
 
-  // ±3σ soft-clip — prevents FWHT tail-outliers from saturating codebook edges.
-  // The codebooks are empirically tuned for the Rademacher-FWHT distribution,
-  // so we preserve the distribution shape and only clip true outliers.
   float sp = sqrtf((float)padded);
   float sum2 = 0.f;
   for (int i = 0; i < padded; ++i) {
@@ -77,15 +228,28 @@ static inline float _quantize_core(const float *x, int dim, int padded,
       v = clip;
     if (v < -clip)
       v = -clip;
-    buf[i] = v * inv_clip; // now in [-1, 1] matching codebook range
+    buf[i] = v * inv_clip;
   }
 
-  // Quantise
   for (int i = 0; i < padded; ++i)
     idx_out[i] = (uint8_t)quantize_fast(buf[i], bits);
 
-  // Effective scale that dequant must multiply by
   return norm * clip;
+}
+
+static inline float _quantize_core(const float *x, int dim, int padded,
+                                   const int8_t *D_vec, int bits,
+                                   uint8_t *idx_out) {
+#if (defined(__GNUC__) || defined(__clang__)) && \
+    (defined(__x86_64__) || defined(__i386__))
+  if (__builtin_cpu_supports("avx2")) {
+    float scale = 0.f;
+    if (quantize_core_avx2(x, dim, padded, D_vec, bits, idx_out,
+                           tl_float_buf, &scale))
+      return scale;
+  }
+#endif
+  return _quantize_core_scalar(x, dim, padded, D_vec, bits, idx_out);
 }
 
 QuantizedVec Quantizer::quantize(const float *x, int bits) const {

@@ -1,5 +1,6 @@
 /* Catch2 v3 — link against Catch2::Catch2WithMain */
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include "../../include/quantizer.h"
 #include "../../include/codebook.h"
 #include <cmath>
@@ -78,6 +79,74 @@ TEST_CASE("Unpacked indices are in [0, 2^bits-1]", "[packing]") {
         for (int i = 0; i < padded; ++i) {
             CAPTURE(bits, i, (int)unpacked[i]);
             REQUIRE((int)unpacked[i] <= max_val);
+        }
+    }
+}
+
+static std::vector<uint8_t> reference_quantized_indices(
+    const Quantizer &q, const std::vector<float> &input, int bits,
+    float &scale) {
+    std::vector<float> buf(q.padded, 0.f);
+    float norm = 0.f;
+    for (int i = 0; i < q.dim; ++i) {
+        buf[i] = input[i];
+        norm += input[i] * input[i];
+    }
+
+    norm = std::sqrt(norm + 1e-12f);
+    const float inv_norm = 1.f / norm;
+    for (int i = 0; i < q.padded; ++i)
+        buf[i] *= inv_norm;
+
+    fwht_forward(buf.data(), q.D.data(), q.padded);
+
+    const float sp = std::sqrt((float)q.padded);
+    float sum2 = 0.f;
+    for (int i = 0; i < q.padded; ++i) {
+        const float value = buf[i] * sp;
+        sum2 += value * value;
+    }
+
+    const float clip = 3.f * std::sqrt(sum2 / (float)q.padded + 1e-12f);
+    const float inv_clip = 1.f / (clip + 1e-12f);
+
+    std::vector<uint8_t> indices(q.padded);
+    for (int i = 0; i < q.padded; ++i) {
+        float value = buf[i] * sp;
+        if (value > clip)
+            value = clip;
+        if (value < -clip)
+            value = -clip;
+        value *= inv_clip;
+        indices[i] = (uint8_t)quantize_fast(value, bits);
+    }
+
+    scale = norm * clip;
+    return indices;
+}
+
+TEST_CASE("Quantizer SIMD staging matches scalar reference", "[quantizer][avx2]") {
+    for (int dim : {9, 17, 33, 65, 127, 128}) {
+        Quantizer q;
+        q.init(dim, 0xA55A1234ULL ^ (uint64_t)dim);
+
+        std::vector<float> input(dim);
+        for (int i = 0; i < dim; ++i)
+            input[i] = std::sin(0.17f * (float)(i + 1)) * (1.f + 0.01f * i);
+
+        for (int bits : {2, 3, 4}) {
+            float reference_scale = 0.f;
+            const auto reference =
+                reference_quantized_indices(q, input, bits, reference_scale);
+
+            const QuantizedVec actual = q.quantize(input.data(), bits);
+            std::vector<uint8_t> actual_indices(q.padded);
+            unpack_indices(actual.data.data(), q.padded, bits,
+                           actual_indices.data());
+
+            CAPTURE(dim, bits, reference_scale, actual.scale);
+            REQUIRE(actual_indices == reference);
+            REQUIRE(actual.scale == Catch::Approx(reference_scale).epsilon(1e-5f));
         }
     }
 }
