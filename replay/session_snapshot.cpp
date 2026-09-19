@@ -382,6 +382,25 @@ SessionSnapshot SessionSnapshot::load(const std::string &path) {
     /* Token log. */
     if (snap.flags_ & 1u) {
         int n_entries = read_i32(f);
+
+        uint64_t expected_entries = static_cast<uint64_t>(snap.n_tokens_);
+        if (expected_entries > std::numeric_limits<uint64_t>::max() /
+                              static_cast<uint64_t>(snap.n_layers_)) {
+            throw std::runtime_error("SessionSnapshot::load: token log entry count overflow");
+        }
+        expected_entries *= static_cast<uint64_t>(snap.n_layers_);
+        if (expected_entries > std::numeric_limits<uint64_t>::max() /
+                              static_cast<uint64_t>(snap.n_heads_)) {
+            throw std::runtime_error("SessionSnapshot::load: token log entry count overflow");
+        }
+        expected_entries *= static_cast<uint64_t>(snap.n_heads_);
+
+        if (static_cast<uint64_t>(n_entries) != expected_entries) {
+            throw std::runtime_error(
+                "SessionSnapshot::load: token log entry count " +
+                std::to_string(n_entries) + " does not match expected count " +
+                std::to_string(expected_entries));
+        }
         const uint64_t min_entry_bytes = checked_count_bytes(n_entries, 12u, "token_log entries");
         require_metadata_container_bytes(n_entries, sizeof(SnapshotTokenEntry), "token_log entries");
         if (min_entry_bytes > remaining_bytes(f, file_size))

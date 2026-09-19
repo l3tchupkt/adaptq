@@ -32,7 +32,7 @@ Quick start:
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
 
 from .base import IRuntimeAdapter
 from .metadata import (
@@ -98,7 +98,7 @@ def backend_available(backend: str) -> bool:
         return False
 
 
-def list_available_backends() -> list[str]:
+def list_available_backends() -> List[str]:
     """
     Return a list of backend names that can be instantiated.
 

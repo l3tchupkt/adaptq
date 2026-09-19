@@ -2,7 +2,15 @@
 import sys
 # Force UTF-8 output on Windows (avoids CP1252 encoding errors)
 if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if hasattr(sys.stderr, 'reconfigure'):
+    try:
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 """
 tests/run_tests.py — AdapTQ Windows Python Test Runner
 =======================================================

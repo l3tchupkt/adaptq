@@ -6,7 +6,7 @@ All fields have sensible defaults; backends populate them after load_model().
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
 
 @dataclass
@@ -41,7 +41,7 @@ class SessionConfig:
     max_new_tokens: int = 128
     log_tokens: bool = True     # Required for snapshot capture
     stream: bool = False
-    stop_sequences: list[str] = field(default_factory=list)
+    stop_sequences: List[str] = field(default_factory=list)
     eos_token_id: Optional[int] = None
 
 
@@ -78,7 +78,7 @@ class KVStats:
 @dataclass
 class GenerationResult:
     """Result of one complete generate() call."""
-    token_ids: list[int] = field(default_factory=list)
+    token_ids: List[int] = field(default_factory=list)
     text: str = ""
     n_prompt_tokens: int = 0
     n_generated_tokens: int = 0

@@ -21,7 +21,7 @@
 
 <br>
 
-**AdapTQ** is a production-grade C++17 KV cache quantization engine for Large Language Model inference on edge and memory-constrained systems. 
+**AdapTQ** is a production-grade C++17 KV cache quantization engine for Large Language Model inference on edge and memory-constrained systems.
 
 It runs entirely on the CPU, requires **no model changes**, and fits seamlessly into existing inference pipelines (Hugging Face Transformers, llama.cpp, Ollama) with minimal wrapper logic. By leveraging Fast Walsh-Hadamard Transforms (FWHT) and branchless SIMD optimizations, AdapTQ achieves **4–8× KV memory reduction** while matching or exceeding FP16 attention throughput at large context lengths.
 
@@ -60,7 +60,8 @@ Install directly from PyPI (includes pre-built C++ extensions for Linux/Windows/
 pip install adaptq
 ```
 
-*To install with specific backend dependencies:*
+_To install with specific backend dependencies:_
+
 ```bash
 pip install adaptq[transformers]   # For Hugging Face support
 pip install adaptq[llama]          # For llama-cpp-python support
@@ -112,16 +113,17 @@ print(response["choices"][0]["text"])
 
 At large context lengths, attention becomes profoundly memory-bandwidth bound. AdapTQ mitigates this by compressing the KV cache, significantly reducing the bytes fetched from RAM during generation.
 
-| Metric | FP16 Baseline | AdapTQ (4-bit) | Improvement |
-| :--- | :--- | :--- | :--- |
-| **Memory per Token (d=128)** | 512 bytes | 64 bytes | **8.0× smaller** |
-| **Throughput (Seq > 2k)** | ~720 tok/s | ~1,139 tok/s | **1.5× faster** |
-| **Cosine Similarity (Quality)** | 1.000 | 0.947 | Minimal Distortion |
+| Metric                          | FP16 Baseline | AdapTQ (4-bit) | Improvement        |
+| :------------------------------ | :------------ | :------------- | :----------------- |
+| **Memory per Token (d=128)**    | 512 bytes     | 64 bytes       | **8.0× smaller**   |
+| **Throughput (Seq > 2k)**       | ~720 tok/s    | ~1,139 tok/s   | **1.5× faster**    |
+| **Cosine Similarity (Quality)** | 1.000         | 0.947          | Minimal Distortion |
 
 ![AdapTQ Performance Benchmarks](adaptq_realtime_bench.png)
-*(Figure: Real-world benchmark of AdapTQ 4-bit vs FP32 showcasing bounded latency, substantial speedups at high sequence lengths, and hybrid-fallback quality maintenance.)*
+_(Figure: Real-world benchmark of AdapTQ 4-bit vs FP32 showcasing bounded latency, substantial speedups at high sequence lengths, and hybrid-fallback quality maintenance.)_
 
 ### How it works (HAR + VQ)
+
 1. **Rotation**: `y = (1/√d) * H * D * x` (Hadamard Accelerated Rotation via FWHT). This smooths outliers, transforming the input distribution to near-Gaussian.
 2. **Quantization**: Vectors are scalar-quantized using optimal Max-Lloyd codebooks.
 3. **Inference**: Queries are rotated once; dot products execute directly against bit-packed LUTs using AVX2 SIMD instructions, completely bypassing full dequantization inside the hot attention loop.
@@ -133,6 +135,7 @@ At large context lengths, attention becomes profoundly memory-bandwidth bound. A
 AdapTQ introduces `.aqss` (AdapTQ Session Snapshot) binary files. You can save exact conversational states and branch them instantaneously.
 
 ### Using the Python API:
+
 ```python
 from adaptq import ReplayEngine, snapshot_info
 
@@ -146,7 +149,9 @@ print(f"Replayed in {result.wall_time_ms} ms")
 ```
 
 ### Using the C++ CLI:
+
 Compare the quality and latency of different quantization strategies on real sessions:
+
 ```bash
 # Build the native CLI
 cmake -B build_release -S . -DCMAKE_BUILD_TYPE=Release
@@ -156,29 +161,6 @@ cmake --build build_release --parallel
 ./build_release/adapTQ_demo compare chat_session.aqss \
   --strategies har_fixed,fp_passthrough \
   --format md
-```
-
----
-
-## 🛠️ Build from Source
-
-To develop or build from source:
-
-```bash
-git clone https://github.com/l3tchupkt/adaptq.git
-cd adaptq
-
-# 1. Install build dependencies
-pip install build pytest twine
-
-# 2. Build the C++ extension and install in editable mode
-pip install -e .[dev]
-
-# 3. Run the full C++ and Python test suite natively
-cmake -B build_release -S . -DCMAKE_BUILD_TYPE=Release -DADAPTQ_BUILD_TESTS=ON
-cmake --build build_release --parallel
-cd build_release && ctest --output-on-failure
-cd .. && python tests/run_tests.py
 ```
 
 ---
@@ -193,29 +175,26 @@ cd .. && python tests/run_tests.py
 - `adaptq/runtime_py/`: Python multi-backend registry (`transformers`, `llama_cpp_python`).
 - `examples/`: Ready-to-run integration demos.
 
+For source builds, local development, testing, and contribution guidelines, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
 ---
 
 ## ❓ FAQ & Troubleshooting
 
 **Q: My model outputs gibberish when using 2-bit quantization.**
+
 > A: 2-bit quantization is highly aggressive (16x compression). It is recommended only for robust, large-scale models (>7B parameters) or for highly structured summarization tasks. Stick to `bits=4` for standard chat models like Qwen2-0.5B or TinyLlama.
 
 **Q: Does AdapTQ require CUDA/GPU?**
+
 > A: No. AdapTQ is explicitly designed for **CPU edge inference**. It relies heavily on AVX2/FMA instructions found on standard x86 processors. ARM NEON support is planned for future roadmaps.
 
 **Q: C++ compilation fails with `unrecognized command line option '-mavx2'`**
+
 > A: Your compiler or architecture does not support AVX2. AdapTQ currently requires an x86_64 CPU with AVX2 and FMA extensions.
 
 ---
-
-## 🤝 Contributing
-Contributions are highly welcome! Whether it's adding an Apple Silicon (MLX) backend, optimizing the AVX2 kernels, or improving the documentation, please submit a Pull Request.
-Before submitting, run:
-```bash
-ruff check . --fix
-cmake --build build_release --parallel && ctest --test-dir build_release
-pytest integration_tests/
-```
 
 ## 📜 Citation
 
@@ -231,4 +210,5 @@ If you use AdapTQ in your research, please cite:
 ```
 
 ## 📄 License
+
 This project is licensed under the [MIT License](LICENSE).

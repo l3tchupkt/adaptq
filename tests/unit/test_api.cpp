@@ -94,6 +94,8 @@ TEST_CASE("adaptq_create with invalid parameters returns null", "[api][security]
     REQUIRE(adaptq_create(0, 4, 1024, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(-1, 4, 1024, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 0, 1024, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(128, 1, 1024, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(128, 5, 1024, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 4, -1, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 4, 1024, 42, 0.f, -100) == nullptr);
     REQUIRE(std::string(adaptq_last_error()).size() > 0);
@@ -417,3 +419,34 @@ TEST_CASE("softmax handles empty, null, single element, and zero-sum safely", "[
         REQUIRE(std::abs(extreme[i] - (1.0f / 3.0f)) < 1e-5f);
     }
 }
+
+TEST_CASE("hybrid path invalidates raw_kv on ring buffer eviction to prevent stale tokens", "[attention][hybrid][eviction]") {
+    // capacity = 4, hybrid_thresh = 16 (capacity < hybrid_thresh)
+    adaptq_ctx_t h = adaptq_create(64, 4, 4, 42, 0.f, 16);
+    REQUIRE(h != nullptr);
+
+    float k[64] = {}, v_old[64] = {}, v_new[64] = {}, q[64] = {}, out[64] = {};
+    fill_vec(k, 64, 1.0f);
+    fill_vec(q, 64, 1.0f);
+    fill_vec(v_old, 64, 1.0f);
+    fill_vec(v_new, 64, 10.0f);
+
+    // Fill capacity (4 tokens with v = 1.0)
+    for (int i = 0; i < 4; ++i) {
+        adaptq_append(h, k, v_old, i);
+    }
+    int n1 = adaptq_compute(h, q, out);
+    REQUIRE(n1 == 4);
+
+    // Overwrite all 4 tokens with v = 10.0 (triggers circular ring buffer eviction)
+    for (int i = 4; i < 8; ++i) {
+        adaptq_append(h, k, v_new, i);
+    }
+    int n2 = adaptq_compute(h, q, out);
+    REQUIRE(n2 == 4);
+    // Output should now reflect v_new (approx 10.0), NOT stale v_old (approx 1.0)
+    REQUIRE(out[0] > 5.0f);
+
+    adaptq_destroy(h);
+}
+

@@ -25,6 +25,7 @@ __all__ = [
     "ReplayResult",
     "CompareResult",
     "snapshot_info",
+    "snapshot_to_json",
 ]
 
 
@@ -385,8 +386,8 @@ def snapshot_info(path: Union[str, Path]) -> dict:
 
     Returns
     -------
-    dict with keys: n_tokens, n_layers, n_heads, dim, has_token_log,
-    has_strategy_state.
+    dict with keys: n_tokens, n_layers, n_heads, dim, bits, version,
+    file_size_bytes, has_token_log, has_strategy_state.
     """
     snapshot_path = Path(path)
     try:
@@ -409,7 +410,7 @@ def snapshot_info(path: Union[str, Path]) -> dict:
         n_layers,
         n_heads,
         dim,
-        _bits,
+        bits,
         n_tokens,
         n_heads_total,
         flags,
@@ -425,11 +426,49 @@ def snapshot_info(path: Union[str, Path]) -> dict:
     if any(value < 0 for value in (n_layers, n_heads, dim, n_tokens, n_heads_total)):
         raise RuntimeError("snapshot_info: invalid negative value in snapshot header")
 
+    file_size = snapshot_path.stat().st_size
+
     return {
         "n_tokens": n_tokens,
         "n_layers": n_layers,
         "n_heads": n_heads,
         "dim": dim,
+        "bits": bits,
+        "version": version,
+        "file_size_bytes": file_size,
         "has_token_log": bool(flags & 1),
         "has_strategy_state": bool(flags & 2),
     }
+
+
+def snapshot_to_json(
+    path: Union[str, Path],
+    json_path: Optional[Union[str, Path]] = None,
+    indent: int = 2,
+) -> str:
+    """
+    Export snapshot header metadata as a formatted JSON string.
+
+    Optionally writes the JSON content to ``json_path`` if specified.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to the ``.aqss`` binary snapshot file.
+    json_path : str or Path, optional
+        Optional path where the formatted JSON string will be saved.
+    indent : int, default 2
+        JSON indentation level for formatting.
+
+    Returns
+    -------
+    str
+        Formatted JSON string containing snapshot metadata.
+    """
+    info = snapshot_info(path)
+    json_str = json.dumps(info, indent=indent)
+    if json_path is not None:
+        out_path = Path(json_path)
+        out_path.write_text(json_str, encoding="utf-8")
+    return json_str
+

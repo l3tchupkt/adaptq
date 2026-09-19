@@ -330,6 +330,7 @@ void AttentionHead::init(int d, int b, int cap, uint64_t seed, float v_mass,
   quant.init(d, seed);
   padded = quant.padded;
   kv_buf.init(cap, padded, b);
+  raw_kv.clear();
   if (hyb > 0)
     raw_kv.reserve((size_t)hyb * 2 * d);
 }
@@ -337,11 +338,17 @@ void AttentionHead::append_kv(const float *key, const float *val, int pos) {
   static thread_local uint8_t tmp_k[8192], tmp_v[8192];
   float ks = quant.quantize_into(key, bits, tmp_k);
   float vs = quant.quantize_into(val, bits, tmp_v);
+  bool will_evict = (kv_buf.size >= kv_buf.capacity);
   kv_buf.insert(tmp_k, ks, tmp_v, vs, pos);
-  // Mirror raw floats for hybrid FP path (only up to threshold)
-  if (hybrid_thresh > 0 && (int)raw_kv.size() < hybrid_thresh * 2 * dim) {
-    raw_kv.insert(raw_kv.end(), key, key + dim);
-    raw_kv.insert(raw_kv.end(), val, val + dim);
+  // Mirror raw floats for hybrid FP path (only up to threshold, before circular eviction)
+  if (hybrid_thresh > 0) {
+    if (!will_evict && (int)raw_kv.size() < hybrid_thresh * 2 * dim) {
+      raw_kv.insert(raw_kv.end(), key, key + dim);
+      raw_kv.insert(raw_kv.end(), val, val + dim);
+    } else if (will_evict && !raw_kv.empty()) {
+      // Invalidate raw_kv once circular FIFO eviction occurs to prevent serving stale tokens
+      raw_kv.clear();
+    }
   }
 }
 

@@ -240,3 +240,24 @@ TEST_CASE("RuntimeContext: HARFixedStrategy handles sizes around and above 65536
         REQUIRE(m.n_tokens_used == target);
     }
 }
+
+TEST_CASE("RuntimeContext: fp_passthrough records pre-softmax logit_max and logit_min", "[runtime][fp32][metrics]") {
+    RuntimeContextConfig cfg = make_cfg(1, 1, 64, 4, 32);
+    RuntimeContext ctx;
+    StrategyFactory sfn = strategy_factory_by_name("fp_passthrough");
+    REQUIRE(sfn != nullptr);
+    ctx.init(cfg, sfn, []() -> IStorageBackend * {
+        return adaptq::make_contiguous();
+    });
+
+    std::vector<float> k_pos(64, 1.0f), k_neg(64, -1.0f), v(64, 0.5f), q(64, 1.0f), out(64);
+    ctx.append(0, 0, k_pos.data(), v.data());
+    ctx.append(0, 0, k_neg.data(), v.data());
+
+    ComputeMetrics m = ctx.compute(0, 0, q.data(), out.data());
+    // Q dot K_pos = 64 / sqrt(64) = 8.0f
+    // Q dot K_neg = -64 / sqrt(64) = -8.0f
+    REQUIRE(std::abs(m.logit_max - 8.0f) < 1e-4f);
+    REQUIRE(std::abs(m.logit_min - (-8.0f)) < 1e-4f);
+}
+

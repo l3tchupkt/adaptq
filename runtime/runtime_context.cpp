@@ -366,14 +366,14 @@ ComputeMetrics RuntimeContext::compute(int          layer,
             if (logits_[i] > mx) mx = logits_[i];
         }
 
+        m.logit_max = mx;
+        m.logit_min = *std::min_element(logits_.begin(), logits_.begin() + n);
+
         /* Softmax. */
         float sv = 0.f;
         for (int i = 0; i < n; ++i) { logits_[i] = expf(logits_[i] - mx); sv += logits_[i]; }
         float inv_s = 1.f / sv;
         for (int i = 0; i < n; ++i) logits_[i] *= inv_s;
-
-        m.logit_max = *std::max_element(logits_.begin(), logits_.begin() + n);
-        m.logit_min = *std::min_element(logits_.begin(), logits_.begin() + n);
 
         /* V accumulation. */
         v_acc_.assign(cfg_.dim, 0.f);

@@ -133,6 +133,9 @@ def test_snapshot_info_reads_header_without_replay(monkeypatch, tmp_path):
         "n_layers": 2,
         "n_heads": 4,
         "dim": 128,
+        "bits": 4,
+        "version": replay_api._SNAPSHOT_VERSION,
+        "file_size_bytes": snapshot.stat().st_size,
         "has_token_log": True,
         "has_strategy_state": True,
     }
@@ -164,3 +167,33 @@ def test_snapshot_info_rejects_invalid_magic(tmp_path):
 
     with pytest.raises(RuntimeError, match="invalid magic"):
         replay_api.snapshot_info(snapshot)
+
+
+def test_snapshot_to_json_exports_json_and_file(tmp_path):
+    snapshot = tmp_path / "session.aqss"
+    header = struct.pack(
+        "<IIiiiiiiQ",
+        replay_api._SNAPSHOT_MAGIC,
+        replay_api._SNAPSHOT_VERSION,
+        2,
+        4,
+        128,
+        4,
+        37,
+        8,
+        3,
+    )
+    snapshot.write_bytes(header)
+
+    json_str = replay_api.snapshot_to_json(snapshot)
+    data = json.loads(json_str)
+    assert data["n_tokens"] == 37
+    assert data["dim"] == 128
+    assert data["bits"] == 4
+    assert data["version"] == replay_api._SNAPSHOT_VERSION
+
+    out_file = tmp_path / "info.json"
+    json_str2 = replay_api.snapshot_to_json(snapshot, json_path=out_file)
+    assert json_str2 == json_str
+    assert out_file.exists()
+    assert json.loads(out_file.read_text(encoding="utf-8")) == data

@@ -96,6 +96,7 @@ public:
                    int                    n,
                    const ExecutionContext & /*ctx*/) override {
         if (n <= 0 || !attn_weights) return -1.f;
+        if (n == 1) return 1.0f;
 
         /* Shannon entropy of the attention distribution, normalised to [0,1]. */
         float entropy = 0.f;
