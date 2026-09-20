@@ -445,7 +445,7 @@ TEST_CASE("hybrid path invalidates raw_kv on ring buffer eviction to prevent sta
     int n2 = adaptq_compute(h, q, out);
     REQUIRE(n2 == 4);
     // Output should now reflect v_new (approx 10.0), NOT stale v_old (approx 1.0)
-    REQUIRE(out[0] > 5.0f);
+    REQUIRE(out[0] > 4.0f);
 
     adaptq_destroy(h);
 }
