@@ -167,11 +167,7 @@ Rademacher-FWHT distribution after ±3σ normalisation (values in [−1, 1]):
 |------|--------|---------|
 | 2    | 4      | `−1.5104, −0.4528, 0.4528, 1.5104` |
 | 3    | 8      | `−2.1529 … +2.1529` (8 values) |
-| 4    | 16     | `−2.7326 … +3.5714` (16 values, asymmetric) |
-
-The asymmetric 4-bit codebook is intentional: the FWHT output has a slightly
-positive-skewed tail distribution after Rademacher mixing, so more centroid
-density is allocated to positive values.
+| 4    | 16     | `−2.7326 … +2.7326` (16 values) |
 
 ---
 
