@@ -3,43 +3,220 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
-  workflow_dispatch:  # Allow manual triggering for testing
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Publishing Target (dry-run builds & tests without publishing; testpypi publishes to TestPyPI)'
+        required: true
+        default: 'dry-run'
+        type: choice
+        options:
+          - 'dry-run'
+          - 'testpypi'
+
+# Discrete release runs should complete deterministically without mid-flight cancellation
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+# Restrict default permissions to read-only; privilege escalation occurs only in dedicated publish jobs
+permissions:
+  contents: read
 
 jobs:
-  build-and-publish:
-    name: Build and publish Python distribution
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 1: Build & Validate Distribution (UNPRIVILEGED)
+  # Executes repository-controlled code (setup.py); MUST NOT have id-token: write
+  # ─────────────────────────────────────────────────────────────────────────
+  build-and-validate:
+    name: Build & Validate Distribution
     runs-on: ubuntu-latest
-
     permissions:
-      id-token: write  # IMPORTANT: Mandatory for PyPI Trusted Publishing
       contents: read
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: "3.11"
 
-      - name: Install build dependencies
+      - name: Install packaging tools
         run: |
           python -m pip install --upgrade pip
-          pip install build twine setuptools pybind11
+          pip install build twine
 
-      - name: Build Source Distribution (sdist)
+      - name: Validate Release Tag & Version Invariant
         run: |
-          python -m build --sdist
+          python - << 'EOF'
+          import os
+          import sys
+          import re
+          if sys.version_info >= (3, 11):
+              import tomllib
+          else:
+              import tomli as tomllib
 
-      - name: Check metadata with Twine
-        run: twine check dist/*
+          # Read authoritative pyproject.toml
+          with open("pyproject.toml", "rb") as f:
+              pyproject = tomllib.load(f)
+          pyproject_version = pyproject.get("project", {}).get("version")
 
-      - name: Publish to PyPI
-        # Only publish if this is a real release or triggered manually on the master/v2 branches
-        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
-        uses: pypa/gh-action-pypi-publish@release/v1
+          # Read runtime adaptq/__init__.py for consistency check
+          with open("adaptq/__init__.py", "r", encoding="utf-8") as f:
+              init_content = f.read()
+          init_match = re.search(r'__version__\s*:\s*str\s*=\s*["\']([^"\']+)["\']', init_content)
+          init_version = init_match.group(1) if init_match else None
+
+          print(f"[i] pyproject.toml version: {pyproject_version}")
+          print(f"[i] adaptq.__init__ version: {init_version}")
+
+          if not pyproject_version:
+              sys.exit("[-] ERROR: Could not find version in pyproject.toml")
+          if pyproject_version != init_version:
+              sys.exit(f"[-] ERROR: Version mismatch: pyproject.toml ({pyproject_version}) != adaptq/__init__.py ({init_version})")
+
+          event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+          ref_name = os.environ.get("GITHUB_REF_NAME", "")
+
+          if event_name == "release":
+              semver_pattern = r'^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+              if not re.match(semver_pattern, ref_name):
+                  sys.exit(f"[-] ERROR: Release tag '{ref_name}' is not a valid semantic version")
+
+              tag_version = ref_name.lstrip("v")
+              print(f"[i] Release Tag: {ref_name} (normalized: {tag_version})")
+              if tag_version != pyproject_version:
+                  sys.exit(f"[-] ERROR: Tag version '{tag_version}' does not match pyproject.toml version '{pyproject_version}'")
+              print("[+] Release tag / version invariant verified successfully.")
+          else:
+              print(f"[i] Non-release event ({event_name}) on ref '{ref_name}'. Invariant check passed for packaging.")
+          EOF
+
+      - name: Build Source Distribution
+        run: python -m build --sdist
+
+      - name: Verify sdist with Twine
+        run: twine check --strict dist/*
+
+      - name: Verify single expected artifact generated
+        run: |
+          python - << 'EOF'
+          import glob
+          import os
+          import sys
+          if sys.version_info >= (3, 11):
+              import tomllib
+          else:
+              import tomli as tomllib
+
+          with open("pyproject.toml", "rb") as f:
+              pyproject = tomllib.load(f)
+          version = pyproject.get("project", {}).get("version")
+
+          expected_name = f"adaptq-{version}.tar.gz"
+          artifacts = [os.path.basename(p) for p in glob.glob("dist/*.tar.gz")]
+
+          if len(artifacts) != 1:
+              sys.exit(f"[-] ERROR: Expected exactly 1 sdist artifact in dist/, found: {artifacts}")
+          if artifacts[0] != expected_name:
+              sys.exit(f"[-] ERROR: Generated artifact '{artifacts[0]}' does not match expected '{expected_name}'")
+
+          print(f"[+] Verified pristine sdist artifact: {artifacts[0]}")
+          EOF
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
-          # This action uses OIDC (Trusted Publishing). 
-          # You do NOT need to set a PYPI_API_TOKEN secret if configured correctly on PyPI.
+          name: python-package-distributions
+          path: dist/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 2: Run Release Test Gate (UNPRIVILEGED)
+  # Ensures tests pass before release deployment; MUST NOT have id-token: write
+  # ─────────────────────────────────────────────────────────────────────────
+  test-gate:
+    name: Pre-Publish Test Gate
+    needs: [build-and-validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies & package
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y cmake ninja-build g++
+          pip install numpy torch --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install -e .[dev]
+
+      - name: Run Accuracy Test Gate
+        run: python tests/test_accuracy.py
+
+      - name: Run Pytest Test Gate
+        run: pytest tests -m "not gpu_required"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 3: Publish to PyPI (PRIVILEGED - OIDC)
+  # Gated strictly to official GitHub Releases; does NOT compile or execute repo code
+  # ─────────────────────────────────────────────────────────────────────────
+  publish-pypi:
+    name: Publish to PyPI (Production)
+    needs: [build-and-validate, test-gate]
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/adaptq
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download build distributions
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish package distribution to PyPI
+        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # release/v1.12.4
+        with:
+          verbose: true
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 4: Publish to TestPyPI (PRIVILEGED - MANUAL DISPATCH ONLY)
+  # Allows manual testing on TestPyPI; CANNOT reach production PyPI
+  # ─────────────────────────────────────────────────────────────────────────
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: [build-and-validate, test-gate]
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/adaptq
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download build distributions
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish package distribution to TestPyPI
+        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # release/v1.12.4
+        with:
+          repository-url: https://test.pypi.org/legacy/
           verbose: true
