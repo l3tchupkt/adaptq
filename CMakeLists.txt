@@ -206,6 +206,20 @@ if(ADAPTQ_BUILD_TESTS)
   target_link_libraries(test_storage PRIVATE Catch2::Catch2WithMain)
   catch_discover_tests(test_storage)
 
+  # --- test_mmap_storage -----------------------------------------------------
+  add_executable(test_mmap_storage
+      tests/unit/test_mmap_storage.cpp)
+  target_include_directories(test_mmap_storage PRIVATE include storage)
+  target_link_libraries(test_mmap_storage PRIVATE Catch2::Catch2WithMain)
+  catch_discover_tests(test_mmap_storage)
+
+  # --- test_numa_allocator ---------------------------------------------------
+  add_executable(test_numa_allocator
+      tests/unit/test_numa_allocator.cpp)
+  target_include_directories(test_numa_allocator PRIVATE include storage)
+  target_link_libraries(test_numa_allocator PRIVATE Catch2::Catch2WithMain)
+  catch_discover_tests(test_numa_allocator)
+
   # --- test_api ------------------------------------------------------------
   add_executable(test_api
       tests/unit/test_api.cpp)

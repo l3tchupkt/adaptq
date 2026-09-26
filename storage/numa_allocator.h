@@ -142,7 +142,11 @@ public:
         };
     }
 
-    void release(StorageSlot slot) override {
+    void release(StorageSlot slot) {
+        free_slot(slot);
+    }
+
+    void free_slot(StorageSlot slot) override {
         if (slot < static_cast<StorageSlot>(capacity_)) {
             slot_lengths_[slot] = 0;
             scale_[slot] = 0.0f;
@@ -151,12 +155,24 @@ public:
         }
     }
 
-    int count() const override {
+    int count() const {
         return size_;
     }
 
-    int capacity() const override {
+    int capacity() const {
         return capacity_;
+    }
+
+    size_t bytes_used() const override {
+        return static_cast<size_t>(size_) * static_cast<size_t>(slot_bytes_);
+    }
+
+    size_t bytes_capacity() const override {
+        return static_cast<size_t>(capacity_) * static_cast<size_t>(slot_bytes_);
+    }
+
+    const char *name() const override {
+        return "numa_pinned_slab";
     }
 
     const NumaStorageStats& stats() const {
