@@ -3,6 +3,7 @@ include LICENSE
 include CMakeLists.txt
 include pyproject.toml
 include setup.py
+include main.cpp
 
 recursive-include include *.h *.hpp
 recursive-include adapters *.h *.hpp *.cpp
@@ -13,6 +14,10 @@ recursive-include attention *.h *.hpp *.cpp
 recursive-include runtime *.h *.hpp *.cpp
 recursive-include replay *.h *.hpp *.cpp
 recursive-include strategies *.h *.hpp *.cpp
+recursive-include storage *.h *.hpp *.cpp
+recursive-include kernels *.h *.hpp *.cpp
+recursive-include cli *.h *.hpp *.cpp
+recursive-include tests *.py *.h *.hpp *.cpp
 
 prune build*/
 prune dist/
