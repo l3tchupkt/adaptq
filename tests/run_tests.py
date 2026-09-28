@@ -348,8 +348,8 @@ LIB_CANDIDATES = [os.path.join(ADAPTQ_DIR, "build", lib_name), os.path.join(ADAP
 LIB = next((p for p in LIB_CANDIDATES if os.path.exists(p)), LIB_CANDIDATES[0])
 
 if not os.path.exists(LIB):
-    print("SKIP: " + lib_name + " not found")
-    sys.exit(0)
+    print("ERROR: " + lib_name + " not found in build directories")
+    sys.exit(1)
 
 lib = ctypes.CDLL(LIB)
 lib.adaptq_create.restype   = ctypes.c_void_p
@@ -482,9 +482,9 @@ print(f"SUMMARY {passed}/{passed+failed}")
 
     print(out.rstrip())
 
-    if "SKIP:" in out:
-        print(f"  {INFO} libadaptq.so not found; skipping ctypes integration tests")
-        return True
+    if rc != 0:
+        check(False, f"C ABI integration: required native library not found / test execution failed (rc={rc})")
+        return False
 
     all_pass = "FAIL" not in out and "SUMMARY" in out
     for line in out.splitlines():
@@ -513,8 +513,8 @@ LIB_CANDIDATES = [os.path.join(ADAPTQ_DIR, "build", lib_name), os.path.join(ADAP
 LIB = next((p for p in LIB_CANDIDATES if os.path.exists(p)), LIB_CANDIDATES[0])
 
 if not os.path.exists(LIB):
-    print("SKIP")
-    sys.exit(0)
+    print("ERROR: " + lib_name + " not found in build directories")
+    sys.exit(1)
 
 lib = ctypes.CDLL(LIB)
 lib.adaptq_create.restype   = ctypes.c_void_p
@@ -594,11 +594,12 @@ print(f"XVAL {'PASS' if all_pass else 'FAIL'}")
         if os.path.exists(tmp):
             os.unlink(tmp)
 
-    if "SKIP" in out:
-        print(f"  {INFO} libadaptq not found — skipping cross-validation.")
-        return True
-
     print(out.rstrip())
+
+    if rc != 0:
+        check(False, f"Cross-validation: required native library not found / test execution failed (rc={rc})")
+        return False
+
     all_ok = "XVAL PASS" in out
     check(all_ok, "C++ output cosine-similar to FP32 reference (all configs)")
     return all_ok
