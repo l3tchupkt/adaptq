@@ -75,14 +75,22 @@ AdapTQ seamlessly injects itself into any standard `transformers` generation pip
 ```python
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from adaptq import create_adapter
+from adaptq.runtime_py import create_adapter
+from adaptq.runtime_py.metadata import ModelConfig
 
 model_id = "Qwen/Qwen2-0.5B"
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float32)
 
 # Wrap the model with AdapTQ (4-bit quantization, 2048 capacity)
-adapter = create_adapter("transformers", model=model, bits=4, capacity=2048)
+adapter = create_adapter("transformers")
+adapter.load_model(
+    ModelConfig(
+        model_path=model_id,
+        adaptq_bits=4,
+        adaptq_capacity=2048,
+    )
+)
 
 # Generate normally! The KV cache is now fully compressed and managed in C++.
 inputs = tokenizer("The future of AI on edge devices is", return_tensors="pt")
@@ -95,16 +103,24 @@ print(tokenizer.decode(outputs[0]))
 For ultra-fast GGUF edge inference, wrap your `Llama` instance:
 
 ```python
-from llama_cpp import Llama
-from adaptq import create_adapter
+from adaptq.runtime_py import create_adapter
+from adaptq.runtime_py.metadata import ModelConfig
 
-llm = Llama(model_path="models/qwen2-0.5b.Q4_K_M.gguf", n_ctx=2048)
+adapter = create_adapter("llama_cpp_python")
+adapter.load_model(
+    ModelConfig(
+        model_path="models/qwen2-0.5b.Q4_K_M.gguf",
+        adaptq_bits=4,
+        n_ctx=2048,
+    )
+)
 
-# Hook AdapTQ into llama.cpp's evaluation loop
-adapter = create_adapter("llama_cpp_python", model=llm, bits=4)
+result = adapter.generate(
+    "Hello, how does KV quantization work?",
+    max_new_tokens=100,
+)
 
-response = llm.create_completion("Hello, how does KV quantization work?", max_tokens=100)
-print(response["choices"][0]["text"])
+print(result.summary())
 ```
 
 ---
