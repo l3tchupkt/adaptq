@@ -89,16 +89,20 @@ void ReplayEngine::feed_token(RuntimeContext                         &ctx,
                                int                                     n_layers,
                                int                                     n_heads,
                                ReplayReport                           *report) const {
-    int stride    = n_layers * n_heads;
-    int base_idx  = token_idx * stride;
+    size_t stride = static_cast<size_t>(n_layers) *
+                static_cast<size_t>(n_heads);
+
+    size_t base_idx = static_cast<size_t>(token_idx) * stride;
 
     static thread_local std::vector<float> out_buf;
     out_buf.resize(ctx.dim());
 
     for (int l = 0; l < n_layers; ++l) {
         for (int h = 0; h < n_heads; ++h) {
-            int entry_idx = base_idx + l * n_heads + h;
-            if (entry_idx >= (int)log.size()) {
+            size_t entry_idx = base_idx +
+                   static_cast<size_t>(l) * static_cast<size_t>(n_heads) +
+                   static_cast<size_t>(h);
+            if (entry_idx >= log.size()) {
                 throw std::runtime_error(
                     "ReplayEngine: token log ended before token " +
                     std::to_string(token_idx) + " was fully replayed");
