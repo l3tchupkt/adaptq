@@ -106,6 +106,32 @@ IKernelBackend *select_kernel_backend();
 bool cpu_supports_avx2();
 
 /**
+ * Returns true if the host CPU supports FMA.
+ */
+bool cpu_supports_fma();
+
+/**
+ * Snapshot of CPU capabilities used for diagnostics and backend choice.
+ */
+struct CpuCapabilities {
+    bool avx2 = false;
+    bool fma = false;
+    bool avx2_backend_available = false;
+};
+
+/**
+ * Query AVX2/FMA support and whether the AVX2 backend can be used.
+ * Never executes AVX2 instructions itself.
+ */
+CpuCapabilities describe_cpu_capabilities();
+
+/**
+ * Short human-readable reason when the AVX2 backend is unavailable.
+ * Returns empty string when available.
+ */
+const char *cpu_backend_unavailable_reason(const CpuCapabilities &caps);
+
+/**
  * Returns true if scalar fallback was requested via environment variables
  * (e.g. ADAPTQ_DISABLE_AVX2=1, ADAPTQ_FORCE_SCALAR=1, ADAPTQ_BACKEND=scalar).
  */

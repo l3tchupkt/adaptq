@@ -93,8 +93,42 @@ bool cpu_supports_avx2() {
 #endif
 }
 
+bool cpu_supports_fma() {
+#if ADAPTQ_X86_OR_X64
+#if defined(_MSC_VER)
+    int regs[4] = {};
+    __cpuidex(regs, 1, 0);
+    return (regs[2] & (1 << 12)) != 0;
+#elif defined(__GNUC__) || defined(__clang__)
+    return __builtin_cpu_supports("fma");
+#else
+    return false;
+#endif
+#else
+    return false;
+#endif
+}
+
+CpuCapabilities describe_cpu_capabilities() {
+    CpuCapabilities caps;
+    caps.avx2 = cpu_supports_avx2();
+    caps.fma = cpu_supports_fma();
+    caps.avx2_backend_available =
+        !is_scalar_forced() && caps.avx2 && caps.fma && (create_avx2_backend() != nullptr);
+    return caps;
+}
+
+const char *cpu_backend_unavailable_reason(const CpuCapabilities &caps) {
+    if (caps.avx2_backend_available) return "";
+    if (is_scalar_forced()) return "scalar backend forced by environment";
+    if (!caps.avx2) return "CPU does not support AVX2";
+    if (!caps.fma) return "CPU does not support FMA";
+    return "AVX2 backend not compiled in";
+}
+
 IKernelBackend *select_kernel_backend() {
-    if (!is_scalar_forced() && cpu_supports_avx2()) {
+    CpuCapabilities caps = describe_cpu_capabilities();
+    if (caps.avx2_backend_available) {
         if (IKernelBackend *backend = create_avx2_backend())
             return backend;
     }
