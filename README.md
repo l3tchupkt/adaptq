@@ -70,41 +70,43 @@ pip install adaptq[all-backends]   # Install all supported integrations
 
 ### 2. Hugging Face Transformers Integration
 
-AdapTQ seamlessly injects itself into any standard `transformers` generation pipeline:
+AdapTQ wraps a standard `transformers` model through its adapter layer:
 
 ```python
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
 from adaptq import create_adapter
+from adaptq.runtime_py.metadata import ModelConfig
 
-model_id = "Qwen/Qwen2-0.5B"
-tokenizer = AutoTokenizer.from_pretrained(model_id)
-model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float32)
+# Create the adapter, then load the model through it
+adapter = create_adapter("transformers")
+adapter.load_model(ModelConfig(
+    model_path="Qwen/Qwen2-0.5B",
+    adaptq_bits=4,
+    adaptq_capacity=2048,
+))
 
-# Wrap the model with AdapTQ (4-bit quantization, 2048 capacity)
-adapter = create_adapter("transformers", model=model, bits=4, capacity=2048)
-
-# Generate normally! The KV cache is now fully compressed and managed in C++.
-inputs = tokenizer("The future of AI on edge devices is", return_tensors="pt")
-outputs = model.generate(**inputs, max_new_tokens=50)
-print(tokenizer.decode(outputs[0]))
+# Generate through the adapter. The KV cache is compressed and managed in C++.
+result = adapter.generate("The future of AI on edge devices is", max_new_tokens=50)
+print(result.text)
 ```
 
 ### 3. llama.cpp Integration
 
-For ultra-fast GGUF edge inference, wrap your `Llama` instance:
+For GGUF edge inference, point the adapter at your model file:
 
 ```python
-from llama_cpp import Llama
 from adaptq import create_adapter
+from adaptq.runtime_py.metadata import ModelConfig
 
-llm = Llama(model_path="models/qwen2-0.5b.Q4_K_M.gguf", n_ctx=2048)
+adapter = create_adapter("llama_cpp_python")
+adapter.load_model(ModelConfig(
+    model_path="models/qwen2-0.5b.Q4_K_M.gguf",
+    n_ctx=2048,
+    adaptq_bits=4,
+    adaptq_capacity=2048,
+))
 
-# Hook AdapTQ into llama.cpp's evaluation loop
-adapter = create_adapter("llama_cpp_python", model=llm, bits=4)
-
-response = llm.create_completion("Hello, how does KV quantization work?", max_tokens=100)
-print(response["choices"][0]["text"])
+result = adapter.generate("Hello, how does KV quantization work?", max_new_tokens=100)
+print(result.text)
 ```
 
 ---
