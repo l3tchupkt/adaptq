@@ -6,6 +6,13 @@
 #include <cstring>
 #include <stdexcept>
 
+#if (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+#define ADAPTQ_QUANT_HAS_AVX2 1
+#include <immintrin.h>
+#else
+#define ADAPTQ_QUANT_HAS_AVX2 0
+#endif
+
 // Maximum padded dimension supported by thread-local scratch buffers.
 // padded = next_pow2(head_dim). If head_dim > 512, padded > 1024 at 2-bit.
 // Increase this constant (and recompile) if you need larger head dims.
@@ -38,6 +45,48 @@ void Quantizer::init(int d, uint64_t seed) {
 // quantise, return packed indices and effective scale.
 // No heap allocs — uses thread_local scratch.
 // ---------------------------------------------------------------------------
+#if ADAPTQ_QUANT_HAS_AVX2
+__attribute__((target("avx2,fma")))
+static inline float hsum8_q(__m256 v) {
+    __m128 lo = _mm256_castps256_ps128(v), hi = _mm256_extractf128_ps(v, 1);
+    lo = _mm_add_ps(lo, hi);
+    lo = _mm_hadd_ps(lo, lo);
+    return _mm_cvtss_f32(_mm_hadd_ps(lo, lo));
+}
+
+__attribute__((target("avx2,fma")))
+static inline float sum_squares_avx2(const float *x, int n) {
+    __m256 acc = _mm256_setzero_ps();
+    int i = 0;
+    for (; i + 7 < n; i += 8) {
+        __m256 v = _mm256_loadu_ps(x + i);
+        acc = _mm256_fmadd_ps(v, v, acc);
+    }
+    float s = hsum8_q(acc);
+    for (; i < n; ++i) s += x[i] * x[i];
+    return s;
+}
+
+__attribute__((target("avx2,fma")))
+static inline void scale_buf_avx2(float *x, int n, float s) {
+    __m256 vs = _mm256_set1_ps(s);
+    int i = 0;
+    for (; i + 7 < n; i += 8) {
+        __m256 v = _mm256_loadu_ps(x + i);
+        _mm256_storeu_ps(x + i, _mm256_mul_ps(v, vs));
+    }
+    for (; i < n; ++i) x[i] *= s;
+}
+
+static inline bool quant_use_avx2() {
+#if ADAPTQ_QUANT_HAS_AVX2
+    return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+#else
+    return false;
+#endif
+}
+#endif
+
 static inline float _quantize_core(const float *x, int dim, int padded,
                                    const int8_t *D_vec, int bits,
                                    uint8_t *idx_out) {
@@ -47,12 +96,23 @@ static inline float _quantize_core(const float *x, int dim, int padded,
   float norm = 0.f;
   for (int i = 0; i < dim; ++i) {
     buf[i] = x[i];
-    norm += x[i] * x[i];
+  }
+#if ADAPTQ_QUANT_HAS_AVX2
+  if (quant_use_avx2() && dim >= 8) norm = sum_squares_avx2(x, dim);
+  else
+#endif
+  {
+    norm = 0.f;
+    for (int i = 0; i < dim; ++i) norm += x[i] * x[i];
   }
   for (int i = dim; i < padded; ++i)
     buf[i] = 0.f;
   norm = sqrtf(norm + 1e-12f);
-  float inv = 1.f / norm;
+  float inv = (norm > 1e-12f) ? (1.f / norm) : 0.f;
+#if ADAPTQ_QUANT_HAS_AVX2
+  if (quant_use_avx2() && padded >= 8) scale_buf_avx2(buf, padded, inv);
+  else
+#endif
   for (int i = 0; i < padded; ++i)
     buf[i] *= inv;
 
