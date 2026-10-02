@@ -93,8 +93,24 @@ bool cpu_supports_avx2() {
 #endif
 }
 
+bool cpu_supports_fma() {
+#if ADAPTQ_X86_OR_X64
+#if defined(_MSC_VER)
+    int regs[4] = {};
+    __cpuidex(regs, 1, 0);
+    return (regs[2] & (1 << 12)) != 0;
+#elif defined(__GNUC__) || defined(__clang__)
+    return __builtin_cpu_supports("fma");
+#else
+    return false;
+#endif
+#else
+    return false;
+#endif
+}
+
 IKernelBackend *select_kernel_backend() {
-    if (!is_scalar_forced() && cpu_supports_avx2()) {
+    if (!is_scalar_forced() && cpu_supports_avx2() && cpu_supports_fma()) {
         if (IKernelBackend *backend = create_avx2_backend())
             return backend;
     }

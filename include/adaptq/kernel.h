@@ -106,6 +106,11 @@ IKernelBackend *select_kernel_backend();
 bool cpu_supports_avx2();
 
 /**
+ * Returns true if the host CPU supports FMA (used by the AVX2 kernels).
+ */
+bool cpu_supports_fma();
+
+/**
  * Returns true if scalar fallback was requested via environment variables
  * (e.g. ADAPTQ_DISABLE_AVX2=1, ADAPTQ_FORCE_SCALAR=1, ADAPTQ_BACKEND=scalar).
  */
