@@ -410,7 +410,7 @@ static void compute_avx2(const float *qr, float *acc, const float *cb,
     logits[j] = expf(logits[j] - mx);
     sv += logits[j];
   }
-  float inv = 1.f / sv;
+  float inv = (sv > 1e-12f && std::isfinite(sv)) ? (1.f / sv) : (1.f / (float)(n > 0 ? n : 1));
   for (int j = 0; j < n; ++j)
     logits[j] *= inv;
 
