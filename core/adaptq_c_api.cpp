@@ -62,7 +62,7 @@ struct AdapTQMHA {
 
 adaptq_ctx_t adaptq_create(int dim, int bits, int capacity, uint64_t seed,
                            float v_mass, int hybrid_thresh) {
-  if (dim <= 0 || bits < 2 || bits > 4 || capacity < 0 || hybrid_thresh < 0) {
+  if (dim <= 0 || bits < 2 || bits > 4 || capacity <= 0 || hybrid_thresh < 0) {
     set_error(ADAPTQ_ERR_INVALID_ARG, "adaptq_create: invalid dimensions or capacity");
     return nullptr;
   }
@@ -149,7 +149,7 @@ size_t adaptq_kv_bytes(adaptq_ctx_t h) {
 adaptq_mha_t adaptq_mha_create(int n_heads, int dim, int bits, int capacity,
                                uint64_t base_seed, float v_mass,
                                int hybrid_thresh) {
-  if (n_heads <= 0 || dim <= 0 || bits < 2 || bits > 4 || capacity < 0 || hybrid_thresh < 0) {
+  if (n_heads <= 0 || dim <= 0 || bits < 2 || bits > 4 || capacity <= 0 || hybrid_thresh < 0) {
     set_error(ADAPTQ_ERR_INVALID_ARG, "adaptq_mha_create: invalid parameters");
     return nullptr;
   }
