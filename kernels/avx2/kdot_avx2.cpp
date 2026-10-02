@@ -158,6 +158,43 @@ static void vaccum4_avx2(float *__restrict acc,
     }
 }
 
+/* ---- AVX2 FWHT helpers (8-wide butterfly + normalize) ------------------ */
+static inline void fwht_butterfly_avx2(float *lo, float *hi, int len) {
+    int j = 0;
+    for (; j + 7 < len; j += 8) {
+        __m256 a = _mm256_loadu_ps(lo + j);
+        __m256 b = _mm256_loadu_ps(hi + j);
+        _mm256_storeu_ps(lo + j, _mm256_add_ps(a, b));
+        _mm256_storeu_ps(hi + j, _mm256_sub_ps(a, b));
+    }
+    for (; j < len; ++j) {
+        float a = lo[j], b = hi[j];
+        lo[j] = a + b;
+        hi[j] = a - b;
+    }
+}
+
+static inline void fwht_scale_avx2(float *x, int n, float scale, const int8_t *D, int d) {
+    __m256 vs = _mm256_set1_ps(scale);
+    int i = 0;
+    // Fast path when D covers the whole vector
+    if (D && d >= n) {
+        for (; i + 7 < n; i += 8) {
+            __m256 v = _mm256_loadu_ps(x + i);
+            // D is +-1 per lane; build float signs on the fly
+            __m256 signs = _mm256_set_ps((float)D[i+7], (float)D[i+6], (float)D[i+5], (float)D[i+4],
+                                         (float)D[i+3], (float)D[i+2], (float)D[i+1], (float)D[i]);
+            _mm256_storeu_ps(x + i, _mm256_mul_ps(_mm256_mul_ps(v, vs), signs));
+        }
+    } else {
+        for (; i + 7 < n; i += 8) {
+            __m256 v = _mm256_loadu_ps(x + i);
+            _mm256_storeu_ps(x + i, _mm256_mul_ps(v, vs));
+        }
+    }
+    for (; i < n; ++i) x[i] *= scale;
+}
+
 namespace adaptq {
 
 /* =========================================================================
@@ -166,10 +203,42 @@ namespace adaptq {
 class AVX2KernelBackend final : public IKernelBackend {
 public:
     void fwht_forward(float *x, const int8_t *D, int p) override {
-        ::fwht_forward(x, D, p);
+        if (!x || !D || p <= 0) return;
+        if (p < 8) { ::fwht_forward(x, D, p); return; }
+        // Fused first pass (D + len=1) scalar, rest 8-wide
+        for (int i = 0; i < p; i += 2) {
+            float a = x[i] * (float)D[i];
+            float b = x[i+1] * (float)D[i+1];
+            x[i] = a + b;
+            x[i+1] = a - b;
+        }
+        for (int len = 2; len < p; len <<= 1) {
+            for (int i = 0; i < p; i += len << 1) {
+                fwht_butterfly_avx2(x + i, x + i + len, len);
+            }
+        }
+        float inv = 1.0f / sqrtf((float)p);
+        __m256 vinv = _mm256_set1_ps(inv);
+        int i = 0;
+        for (; i + 7 < p; i += 8) {
+            __m256 v = _mm256_loadu_ps(x + i);
+            _mm256_storeu_ps(x + i, _mm256_mul_ps(v, vinv));
+        }
+        for (; i < p; ++i) x[i] *= inv;
     }
     void fwht_inverse(float *x, const int8_t *D, int p) override {
-        ::fwht_inverse(x, D, p);
+        if (!x || !D || p <= 0) return;
+        if (p < 8) { ::fwht_inverse(x, D, p); return; }
+        for (int len = 1; len < p; len <<= 1) {
+            for (int i = 0; i < p; i += len << 1) {
+                fwht_butterfly_avx2(x + i, x + i + len, len);
+            }
+        }
+        float scale = 1.0f / sqrtf((float)p);
+        fwht_scale_avx2(x, p, scale, D, p);
+        // Apply D signs for the tail when D length < p (padded case handled above)
+        // fwht_scale_avx2 already folded D when d>=n; for padded the extra
+        // lanes use +1 which matches the scalar reference.
     }
 
     /* K-dot: 4-token batches via kdot4_quad, scalar tail via kdot1 */
