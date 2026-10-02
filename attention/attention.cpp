@@ -436,8 +436,38 @@ static void compute_avx2(const float *qr, float *acc, const float *cb,
     int *ord = tl_ws.ord.data();
     for (int ii = 0; ii < n; ++ii)
       ord[ii] = ii;
-    std::sort(ord, ord + n,
-              [&](int a, int b) { return logits[a] > logits[b]; });
+    auto cmp = [&](int a, int b) { return logits[a] > logits[b]; };
+    int sorted = n;
+    if (n > 64) {
+      // Only the top mass prefix matters. Partition the top candidates
+      // first and sort just that prefix; grow only if mass needs more.
+      int k = 64;
+      std::nth_element(ord, ord + k, ord + n, cmp);
+      std::sort(ord, ord + k, cmp);
+      float probe = 0.f;
+      for (int i = 0; i < k; ++i) probe += logits[ord[i]];
+      sorted = k;
+      while (probe < v_mass_thresh && sorted < n) {
+        int nk = std::min(n, sorted * 2);
+        std::nth_element(ord + sorted, ord + nk, ord + n, cmp);
+        // Merge the two sorted runs: full resort of the grown prefix
+        // keeps the order identical to a full sort of that prefix.
+        std::sort(ord, ord + nk, cmp);
+        probe = 0.f;
+        for (int i = 0; i < nk; ++i) probe += logits[ord[i]];
+        sorted = nk;
+      }
+      if (sorted < n) {
+        // Prefix already covers the requested mass; remaining entries
+        // are all <= prefix minimum by nth_element, so accumulation
+        // below only needs the sorted prefix.
+        n = sorted;
+      } else {
+        std::sort(ord, ord + n, cmp);
+      }
+    } else {
+      std::sort(ord, ord + n, cmp);
+    }
     float mass = 0.f;
     int ii = 0;
     for (; ii + 3 < n && mass < v_mass_thresh; ii += 4) {
