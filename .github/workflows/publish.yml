@@ -3,12 +3,23 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
-  workflow_dispatch:  # Allow manual triggering for testing
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to publish on manual run"
+        required: false
+        default: "testpypi"
+        type: choice
+        options:
+          - testpypi
+          - dry-run
 
 jobs:
   build-and-publish:
     name: Build and publish Python distribution
     runs-on: ubuntu-latest
+    # Require manual approval for real PyPI releases.
+    environment: ${{ github.event_name == 'release' && 'pypi' || 'test' }}
 
     permissions:
       id-token: write  # IMPORTANT: Mandatory for PyPI Trusted Publishing
@@ -28,6 +39,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install build twine setuptools pybind11
 
+      - name: Check tag matches package version (release only)
+        if: github.event_name == 'release'
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VER=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "tag=$TAG version=$VER"
+          if [ "$TAG" != "$VER" ]; then
+            echo "Tag v$TAG does not match pyproject version $VER"
+            exit 1
+          fi
+
       - name: Build Source Distribution (sdist)
         run: |
           python -m build --sdist
@@ -35,11 +57,21 @@ jobs:
       - name: Check metadata with Twine
         run: twine check dist/*
 
-      - name: Publish to PyPI
-        # Only publish if this is a real release or triggered manually on the master/v2 branches
-        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+      - name: Publish to PyPI (release only)
+        if: github.event_name == 'release'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # This action uses OIDC (Trusted Publishing). 
-          # You do NOT need to set a PYPI_API_TOKEN secret if configured correctly on PyPI.
           verbose: true
+
+      - name: Publish to TestPyPI (manual runs only)
+        if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          verbose: true
+
+      - name: Dry run summary (manual dry-run)
+        if: github.event_name == 'workflow_dispatch' && inputs.target == 'dry-run'
+        run: |
+          ls -lh dist/
+          echo "Dry run: package built and checked, nothing uploaded."
