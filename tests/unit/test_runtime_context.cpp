@@ -261,3 +261,11 @@ TEST_CASE("RuntimeContext: fp_passthrough records pre-softmax logit_max and logi
     REQUIRE(std::abs(m.logit_min - (-8.0f)) < 1e-4f);
 }
 
+TEST_CASE("RuntimeContext: oversized dim fails fast without hanging", "[runtime][limits]") {
+    RuntimeContext ctx;
+    RuntimeContextConfig big = make_cfg(1, 1, (1 << 30) + 1, 4, 32);
+    REQUIRE_THROWS_AS(ctx.init(big), std::invalid_argument);
+    RuntimeContextConfig huge = make_cfg(1, 1, 2147483647, 4, 32);
+    REQUIRE_THROWS_AS(ctx.init(huge), std::invalid_argument);
+}
+
