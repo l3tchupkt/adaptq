@@ -546,9 +546,13 @@ int AttentionHead::compute(const float *q, float *out) const {
 
   // inside compute():
 #if ADAPTQ_HAS_AVX2
-  bool use_avx2 = true;
+  bool use_avx2 = false;
 #if defined(__GNUC__) || defined(__clang__)
   use_avx2 = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+#elif defined(_MSC_VER)
+  // No portable builtin here; stay on scalar to avoid illegal instructions.
+  // The kernel selector does full CPUID + XCR0 checks for MSVC builds.
+  use_avx2 = false;
 #endif
   if (use_avx2) {
   if (bits == 4) {
