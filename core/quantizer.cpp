@@ -6,6 +6,29 @@
 #include <cstring>
 #include <stdexcept>
 
+#if (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+#define ADAPTQ_DEQ_HAS_AVX2 1
+#include <immintrin.h>
+#else
+#define ADAPTQ_DEQ_HAS_AVX2 0
+#endif
+
+#if ADAPTQ_DEQ_HAS_AVX2
+__attribute__((target("avx2,fma")))
+static inline void scale_out_avx2(float *dst, const float *src, int n, float s) {
+    __m256 vs = _mm256_set1_ps(s);
+    int i = 0;
+    for (; i + 7 < n; i += 8) {
+        __m256 v = _mm256_loadu_ps(src + i);
+        _mm256_storeu_ps(dst + i, _mm256_mul_ps(v, vs));
+    }
+    for (; i < n; ++i) dst[i] = src[i] * s;
+}
+static inline bool deq_use_avx2() {
+    return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+}
+#endif
+
 // Maximum padded dimension supported by thread-local scratch buffers.
 // padded = next_pow2(head_dim). If head_dim > 512, padded > 1024 at 2-bit.
 // Increase this constant (and recompile) if you need larger head dims.
@@ -112,6 +135,10 @@ void Quantizer::dequantize(const QuantizedVec &q, float *out) const {
   for (int i = 0; i < d; ++i)
     buf[i] = cb[idx[i]] * inv_sq;
   fwht_inverse(buf, D.data(), d);
+#if ADAPTQ_DEQ_HAS_AVX2
+  if (deq_use_avx2() && dim >= 8) scale_out_avx2(out, buf, dim, q.scale);
+  else
+#endif
   for (int i = 0; i < dim; ++i)
     out[i] = buf[i] * q.scale;
 }
@@ -134,6 +161,10 @@ void Quantizer::dequantize_raw(const uint8_t *packed, float scale, int padded_d,
   for (int i = 0; i < padded_d; ++i)
     buf[i] = cb[idx[i]] * inv_sq;
   fwht_inverse(buf, D.data(), padded_d);
+#if ADAPTQ_DEQ_HAS_AVX2
+  if (deq_use_avx2() && dim >= 8) scale_out_avx2(out, buf, dim, scale);
+  else
+#endif
   for (int i = 0; i < dim; ++i)
     out[i] = buf[i] * scale;
 }
