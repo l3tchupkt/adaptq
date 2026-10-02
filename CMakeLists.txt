@@ -266,6 +266,38 @@ if(ADAPTQ_BUILD_TESTS)
   target_link_libraries(test_kernel_selector PRIVATE adapTQ_runtime adapTQ_core Catch2::Catch2WithMain)
   catch_discover_tests(test_kernel_selector)
 
+  # --- test_mmap_storage ---------------------------------------------------
+  # Header-only MMapStorage backend, same pattern as test_storage.
+  add_executable(test_mmap_storage
+      tests/unit/test_mmap_storage.cpp)
+  target_include_directories(test_mmap_storage PRIVATE include storage)
+  target_link_libraries(test_mmap_storage PRIVATE Catch2::Catch2WithMain)
+  catch_discover_tests(test_mmap_storage)
+
+  # --- test_numa_allocator -------------------------------------------------
+  # Header-only NUMA pinned slab backend.
+  add_executable(test_numa_allocator
+      tests/unit/test_numa_allocator.cpp)
+  target_include_directories(test_numa_allocator PRIVATE include storage)
+  target_link_libraries(test_numa_allocator PRIVATE Catch2::Catch2WithMain)
+  catch_discover_tests(test_numa_allocator)
+
+  # --- test_metrics_exporter -----------------------------------------------
+  # Header-only Prometheus / OTel exporter in runtime/.
+  add_executable(test_metrics_exporter
+      tests/unit/test_metrics_exporter.cpp)
+  target_include_directories(test_metrics_exporter PRIVATE include runtime)
+  target_link_libraries(test_metrics_exporter PRIVATE Catch2::Catch2WithMain)
+  catch_discover_tests(test_metrics_exporter)
+
+  # --- test_cmd_verify ------------------------------------------------------
+  # Header-only TensorVerificationEngine in cli/.
+  add_executable(test_cmd_verify
+      tests/unit/test_cmd_verify.cpp)
+  target_include_directories(test_cmd_verify PRIVATE include cli)
+  target_link_libraries(test_cmd_verify PRIVATE Catch2::Catch2WithMain)
+  catch_discover_tests(test_cmd_verify)
+
   message(STATUS "Test targets enabled (V1: 38 tests + V2: runtime/snapshot/replay + Codebook/Kernel tests)")
 endif()
 

@@ -142,7 +142,7 @@ public:
         };
     }
 
-    void release(StorageSlot slot) override {
+    void release(StorageSlot slot) {
         if (slot < static_cast<StorageSlot>(capacity_)) {
             slot_lengths_[slot] = 0;
             scale_[slot] = 0.0f;
@@ -151,12 +151,28 @@ public:
         }
     }
 
-    int count() const override {
+    void free_slot(StorageSlot slot) override {
+        release(slot);
+    }
+
+    int count() const {
         return size_;
     }
 
-    int capacity() const override {
+    int capacity() const {
         return capacity_;
+    }
+
+    size_t bytes_used() const override {
+        return static_cast<size_t>(size_) * static_cast<size_t>(slot_bytes_);
+    }
+
+    size_t bytes_capacity() const override {
+        return static_cast<size_t>(capacity_) * static_cast<size_t>(slot_bytes_);
+    }
+
+    const char *name() const override {
+        return "numa_pinned_slab";
     }
 
     const NumaStorageStats& stats() const {
@@ -227,7 +243,9 @@ private:
 #if defined(_MSC_VER)
             data_ = static_cast<uint8_t*>(_aligned_malloc(size_bytes, 64));
 #else
-            data_ = static_cast<uint8_t*>(std::aligned_alloc(64, size_bytes));
+            // aligned_alloc is not available on all toolchains, plain malloc
+            // keeps this fallback portable. Alignment is best-effort here.
+            data_ = static_cast<uint8_t*>(std::malloc(size_bytes));
 #endif
             if (!data_) throw std::bad_alloc();
         }
