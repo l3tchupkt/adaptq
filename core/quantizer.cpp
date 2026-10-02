@@ -145,6 +145,7 @@ static void pack4(const uint8_t *idx, int d, uint8_t *dst) {
   int n = d >> 1;
   for (int i = 0; i < n; ++i)
     dst[i] = (uint8_t)((idx[i * 2] << 4) | (idx[i * 2 + 1] & 0xF));
+  if (d & 1) dst[n] = (uint8_t)(idx[n * 2] << 4);
 }
 static void unpack4(const uint8_t *src, int d, uint8_t *idx) {
   int n = d >> 1;
@@ -152,6 +153,7 @@ static void unpack4(const uint8_t *src, int d, uint8_t *idx) {
     idx[i * 2] = src[i] >> 4;
     idx[i * 2 + 1] = src[i] & 0xF;
   }
+  if (d & 1) idx[n * 2] = src[n] >> 4;
 }
 
 static void pack2(const uint8_t *idx, int d, uint8_t *dst) {
@@ -159,6 +161,12 @@ static void pack2(const uint8_t *idx, int d, uint8_t *dst) {
   for (int i = 0; i < n; ++i)
     dst[i] = (uint8_t)((idx[i * 4] << 6) | (idx[i * 4 + 1] << 4) |
                        (idx[i * 4 + 2] << 2) | idx[i * 4 + 3]);
+  int r = d & 3;
+  if (r) {
+    uint8_t last = 0;
+    for (int k = 0; k < r; ++k) last |= (uint8_t)((idx[n * 4 + k] & 3) << (6 - 2 * k));
+    dst[n] = last;
+  }
 }
 static void unpack2(const uint8_t *src, int d, uint8_t *idx) {
   int n = d >> 2;
@@ -168,8 +176,51 @@ static void unpack2(const uint8_t *src, int d, uint8_t *idx) {
     idx[i * 4 + 2] = (src[i] >> 2) & 3;
     idx[i * 4 + 3] = src[i] & 3;
   }
+  int r = d & 3;
+  for (int k = 0; k < r; ++k) idx[n * 4 + k] = (src[n] >> (6 - 2 * k)) & 3;
 }
 
+static void pack3_tail(const uint8_t *idx, int d, uint8_t *dst) {
+  // Generic MSB-first bit writer for the leftover < 8 indices.
+  // Matches the layout of the fast 8-index path above.
+  int bit_pos = 0;
+  int out = 0;
+  uint8_t cur = 0;
+  int total_bits = d * 3;
+  int packed_bytes = (total_bits + 7) / 8;
+  for (int i = 0; i < packed_bytes; ++i) dst[i] = 0;
+  for (int i = 0; i < d; ++i) {
+    uint8_t v = idx[i] & 7;
+    for (int b = 2; b >= 0; --b) {
+      cur = (uint8_t)((cur << 1) | ((v >> b) & 1));
+      if (++bit_pos == 8) {
+        dst[out++] = cur;
+        cur = 0;
+        bit_pos = 0;
+      }
+    }
+  }
+  if (bit_pos) dst[out] = (uint8_t)(cur << (8 - bit_pos));
+}
+static void unpack3_tail(const uint8_t *src, int d, uint8_t *idx) {
+  int bit_pos = 0;
+  uint8_t cur = src[0];
+  int in = 0;
+  int total_bytes = (d * 3 + 7) / 8;
+  (void)total_bytes;
+  for (int i = 0; i < d; ++i) {
+    uint8_t v = 0;
+    for (int b = 0; b < 3; ++b) {
+      if (bit_pos == 8) {
+        cur = src[++in];
+        bit_pos = 0;
+      }
+      v = (uint8_t)((v << 1) | ((cur >> (7 - bit_pos)) & 1));
+      ++bit_pos;
+    }
+    idx[i] = v;
+  }
+}
 static void pack3(const uint8_t *idx, int d, uint8_t *dst) {
   int g = d / 8;
   for (int i = 0; i < g; ++i) {
@@ -179,6 +230,8 @@ static void pack3(const uint8_t *idx, int d, uint8_t *dst) {
     p[1] = (uint8_t)((s[2] << 7) | (s[3] << 4) | (s[4] << 1) | (s[5] >> 2));
     p[2] = (uint8_t)((s[5] << 6) | (s[6] << 3) | s[7]);
   }
+  int r = d % 8;
+  if (r) pack3_tail(idx + g * 8, r, dst + g * 3);
 }
 static void unpack3(const uint8_t *src, int d, uint8_t *idx) {
   int g = d / 8;
@@ -194,6 +247,8 @@ static void unpack3(const uint8_t *src, int d, uint8_t *idx) {
     s[6] = (p[2] >> 3) & 7;
     s[7] = p[2] & 7;
   }
+  int r = d % 8;
+  if (r) unpack3_tail(src + g * 3, r, idx + g * 8);
 }
 
 void pack_indices(const uint8_t *indices, int d, int bits, uint8_t *dst) {
