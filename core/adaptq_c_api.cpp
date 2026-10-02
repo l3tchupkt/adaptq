@@ -149,19 +149,32 @@ size_t adaptq_kv_bytes(adaptq_ctx_t h) {
 adaptq_mha_t adaptq_mha_create(int n_heads, int dim, int bits, int capacity,
                                uint64_t base_seed, float v_mass,
                                int hybrid_thresh) {
-  if (n_heads <= 0 || dim <= 0 || bits < 2 || bits > 4 || capacity < 0 || hybrid_thresh < 0) {
+  if (n_heads <= 0 || dim <= 0 || bits < 2 || bits > 4 || capacity <= 0 || hybrid_thresh < 0) {
     set_error(ADAPTQ_ERR_INVALID_ARG, "adaptq_mha_create: invalid parameters");
     return nullptr;
   }
-  auto *mha = new AdapTQMHA();
-  mha->n_heads = n_heads;
-  mha->heads.resize(n_heads);
-  for (int i = 0; i < n_heads; ++i) {
-    uint64_t seed = base_seed ^ ((uint64_t)i * 0xDEADBEEFCAFEULL);
-    mha->heads[i] = static_cast<AdapTQCtx *>(
-        adaptq_create(dim, bits, capacity, seed, v_mass, hybrid_thresh));
+  try {
+    auto *mha = new AdapTQMHA();
+    mha->n_heads = n_heads;
+    mha->heads.resize(n_heads);
+    for (int i = 0; i < n_heads; ++i) {
+      uint64_t seed = base_seed ^ ((uint64_t)i * 0xDEADBEEFCAFEULL);
+      mha->heads[i] = static_cast<AdapTQCtx *>(
+          adaptq_create(dim, bits, capacity, seed, v_mass, hybrid_thresh));
+      if (!mha->heads[i]) {
+        for (int j = 0; j < i; ++j) delete mha->heads[j];
+        delete mha;
+        return nullptr;
+      }
+    }
+    return mha;
+  } catch (const std::exception &) {
+    set_error(ADAPTQ_ERR_ALLOC, "adaptq_mha_create: allocation failed");
+    return nullptr;
+  } catch (...) {
+    set_error(ADAPTQ_ERR_ALLOC, "adaptq_mha_create: allocation failed");
+    return nullptr;
   }
-  return mha;
 }
 
 void adaptq_mha_destroy(adaptq_mha_t h) {
