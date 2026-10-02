@@ -406,13 +406,42 @@ static void compute_avx2(const float *qr, float *acc, const float *cb,
   }
 
   float sv = 0.f;
+#if ADAPTQ_HAS_AVX2
+  {
+    __m256 vsum = _mm256_setzero_ps();
+    int j = 0;
+    for (; j + 7 < n; j += 8) {
+      for (int k = 0; k < 8; ++k) logits[j + k] = expf(logits[j + k] - mx);
+      __m256 v = _mm256_loadu_ps(logits + j);
+      vsum = _mm256_add_ps(vsum, v);
+    }
+    sv = hsum8(vsum);
+    for (; j < n; ++j) {
+      logits[j] = expf(logits[j] - mx);
+      sv += logits[j];
+    }
+  }
+#else
   for (int j = 0; j < n; ++j) {
     logits[j] = expf(logits[j] - mx);
     sv += logits[j];
   }
-  float inv = 1.f / sv;
+#endif
+  float inv = (sv > 1e-12f && std::isfinite(sv)) ? (1.f / sv) : (1.f / (float)(n > 0 ? n : 1));
+#if ADAPTQ_HAS_AVX2
+  {
+    __m256 vinv = _mm256_set1_ps(inv);
+    int j = 0;
+    for (; j + 7 < n; j += 8) {
+      __m256 v = _mm256_loadu_ps(logits + j);
+      _mm256_storeu_ps(logits + j, _mm256_mul_ps(v, vinv));
+    }
+    for (; j < n; ++j) logits[j] *= inv;
+  }
+#else
   for (int j = 0; j < n; ++j)
     logits[j] *= inv;
+#endif
 
   memset(acc, 0, padded * sizeof(float));
 
