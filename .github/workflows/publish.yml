@@ -3,15 +3,14 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
-  workflow_dispatch:  # Allow manual triggering for testing
+  workflow_dispatch:
 
 jobs:
-  build-and-publish:
-    name: Build and publish Python distribution
+  build:
+    name: Build Python distribution
     runs-on: ubuntu-latest
 
     permissions:
-      id-token: write  # IMPORTANT: Mandatory for PyPI Trusted Publishing
       contents: read
 
     steps:
@@ -35,11 +34,44 @@ jobs:
       - name: Check metadata with Twine
         run: twine check dist/*
 
+      - name: Upload distribution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-distribution
+          path: dist/*
+
+  publish:
+    name: Publish Python distribution to PyPI
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+
+    environment:
+      name: pypi
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download distribution artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: python-distribution
+          path: dist
+
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ -z "$RELEASE_TAG" ]; then
+            echo "Release tag is required for PyPI publishing."
+            exit 1
+          fi
+
+          echo "Publishing release: $RELEASE_TAG"
+
       - name: Publish to PyPI
-        # Only publish if this is a real release or triggered manually on the master/v2 branches
-        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # This action uses OIDC (Trusted Publishing). 
-          # You do NOT need to set a PYPI_API_TOKEN secret if configured correctly on PyPI.
           verbose: true
