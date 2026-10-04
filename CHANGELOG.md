@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.3] — 2026-10-04 — V2.3: PyPI Release Unblocker
+
+### Fixed
+- **PyPI Release**: Bumped version to `0.2.3` to bypass PyPI's 14-day lock on modifying existing release versions, allowing the `0.2.2` stabilization and streaming fixes to be successfully published.
+
+---
+
 ## [0.2.2] — 2026-10-04 — Stabilization, Streaming & Release Hygiene
 
 ### Added
@@ -218,7 +225,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **38/38 C++ tests** pass
 - **5/5 Python validation stages** pass
 
-[Unreleased]: https://github.com/l3tchupkt/adaptq/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/l3tchupkt/adaptq/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/l3tchupkt/adaptq/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/l3tchupkt/adaptq/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/l3tchupkt/adaptq/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/l3tchupkt/adaptq/compare/v0.1.0...v0.2.0
