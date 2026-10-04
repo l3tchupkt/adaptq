@@ -79,5 +79,6 @@ markers = [
 ]
 
 [tool.setuptools]
-packages = ["adaptq"]
 include-package-data = true
+[tool.setuptools.packages.find]
+include = ["adaptq*"]
