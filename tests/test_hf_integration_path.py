@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from adaptq.runtime_py.backends.transformers_hf import AdapTQCache
-from adaptq.research.packed_kv import PackedKVCache
+
 
 @pytest.mark.parametrize("bits", [2, 4])
 def test_hf_integration_execution_path(bits):

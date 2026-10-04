@@ -2,7 +2,7 @@ import math
 import numpy as np
 import pytest
 
-from adaptq.research.packed_kv import (
+from adaptq.reference.packed_kv import (
     PackedKVCache,
     fwht_forward,
     fwht_inverse,

@@ -95,7 +95,7 @@ class AdapTQCache(DynamicCache):
                 device=device
             )
         else:
-            from adaptq.research.packed_kv import PackedKVCache
+            from adaptq.reference.packed_kv import PackedKVCache
             self._packed_cache = PackedKVCache(
                 bits=adaptq_bits,
                 head_dim=head_dim,
