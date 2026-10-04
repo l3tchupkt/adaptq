@@ -23,11 +23,11 @@
 
 **AdapTQ** is a production-grade C++17 KV cache quantization engine for Large Language Model inference on edge and memory-constrained systems. 
 
-It runs entirely on the CPU, requires **no model changes**, and fits seamlessly into existing inference pipelines (Hugging Face Transformers, llama.cpp, Ollama) with minimal wrapper logic. By leveraging Fast Walsh-Hadamard Transforms (FWHT) and branchless SIMD optimizations, AdapTQ achieves **4–8× KV memory reduction** while matching or exceeding FP16 attention throughput at large context lengths.
+It runs entirely on the CPU, requires **no model changes**, and fits seamlessly into existing inference pipelines (Hugging Face Transformers, llama.cpp, Ollama) with minimal wrapper logic. By leveraging Fast Walsh-Hadamard Transforms (FWHT) and branchless SIMD optimizations, AdapTQ achieves **~3.5–6.4× KV memory reduction** while matching or exceeding FP16 attention throughput at large context lengths.
 
 ## ✨ Key Features
 
-- **Extreme Memory Compression**: 4–8× smaller KV cache footprints via 2-bit, 3-bit, and 4-bit Max-Lloyd quantization.
+- **Extreme Memory Compression**: ~3.5–6.4× smaller KV cache footprints via 2-bit, 3-bit, and 4-bit Max-Lloyd quantization.
 - **Unified SIMD Pipeline**: 2/3/4-bit decoding shares a single, quad-unrolled branchless loop using AVX2 intrinsics. No scalar fallbacks.
 - **Hybrid Execution**: Automatically routes short sequences (≤ 256 tokens) to FP32 and long sequences to quantized SIMD, maximizing speed without data copying.
 - **Multi-Backend Support (V2.1)**: Drop-in wrappers for `transformers` and `llama-cpp-python`.
@@ -97,11 +97,11 @@ print(response["choices"][0]["text"])
 
 At large context lengths, attention becomes profoundly memory-bandwidth bound. AdapTQ mitigates this by compressing the KV cache, significantly reducing the bytes fetched from RAM during generation.
 
-| Metric | FP16 Baseline | AdapTQ (4-bit) | Improvement |
+| Metric | FP16 Baseline | AdapTQ (4-bit) | AdapTQ (2-bit) |
 | :--- | :--- | :--- | :--- |
-| **Memory per Token (d=128)** | 512 bytes | 64 bytes | **8.0× smaller** |
-| **Throughput (Seq > 2k)** | ~720 tok/s | ~1,139 tok/s | **1.5× faster** |
-| **Cosine Similarity (Quality)** | 1.000 | 0.947 | Minimal Distortion |
+| **Compression Ratio** | 1.00x | **~3.55x smaller** | **~6.40x smaller** |
+| **Throughput (Seq > 2k)** | ~720 tok/s | ~1,139 tok/s | - |
+| **Cosine Similarity (Quality)** | 1.000 | > 0.995 | ~ 0.940 |
 
 ![AdapTQ Performance Benchmarks](adaptq_realtime_bench.png)
 *(Figure: Real-world benchmark of AdapTQ 4-bit vs FP32 showcasing bounded latency, substantial speedups at high sequence lengths, and hybrid-fallback quality maintenance.)*

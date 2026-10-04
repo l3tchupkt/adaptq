@@ -248,6 +248,16 @@ if(ADAPTQ_BUILD_TESTS)
   target_link_libraries(test_codebook PRIVATE Catch2::Catch2WithMain)
   catch_discover_tests(test_codebook)
 
+  # --- test_quantizer_229 (Issue #229 codebook correctness + reconstruction) ---
+  add_executable(test_quantizer_229
+      tests/unit/test_quantizer_229.cpp
+      core/codebook.cpp
+      core/quantizer.cpp
+      core/fwht.cpp)
+  target_include_directories(test_quantizer_229 PRIVATE include)
+  target_link_libraries(test_quantizer_229 PRIVATE Catch2::Catch2WithMain)
+  catch_discover_tests(test_quantizer_229)
+
   # --- test_kernel_selector (Issue #7 capability and fallback) -------------
   add_executable(test_kernel_selector
       tests/unit/test_kernel_selector.cpp)
