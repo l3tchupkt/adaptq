@@ -1,0 +1,158 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading TinyLlama/TinyLlama-1.1B-Chat-v1.0 on cuda...
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights:   0%|          | 1/201 [00:00<01:03,  3.15it/s]Loading weights:   7%|▋         | 15/201 [00:00<00:04, 44.71it/s]Loading weights:  16%|█▌        | 32/201 [00:00<00:02, 81.32it/s]Loading weights:  24%|██▍       | 49/201 [00:00<00:01, 105.81it/s]Loading weights:  32%|███▏      | 65/201 [00:00<00:01, 121.66it/s]Loading weights:  40%|███▉      | 80/201 [00:00<00:00, 129.60it/s]Loading weights:  47%|████▋     | 95/201 [00:00<00:00, 131.77it/s]Loading weights:  56%|█████▌    | 112/201 [00:01<00:00, 139.86it/s]Loading weights:  63%|██████▎   | 127/201 [00:01<00:00, 141.08it/s]Loading weights:  71%|███████   | 142/201 [00:01<00:00, 139.42it/s]Loading weights:  79%|███████▊  | 158/201 [00:01<00:00, 137.34it/s]Loading weights:  87%|████████▋ | 175/201 [00:01<00:00, 146.27it/s]Loading weights:  96%|█████████▌| 193/201 [00:01<00:00, 148.69it/s]Loading weights: 100%|██████████| 201/201 [00:01<00:00, 122.41it/s]
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (35002 > 2048). Running this sequence through the model will result in indexing errors
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] This is a friendly reminder - the current text generation call has exceeded the model's predefined maximum length (2048). Depending on the model, you may observe exceptions, performance degradation, or nothing at all.
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+[transformers] Both `max_new_tokens` (=10) and `max_length`(=2048) seem to have been set. `max_new_tokens` will take precedence. Please refer to the documentation for more information. (https://huggingface.co/docs/transformers/main/en/main_classes/text_generation)
+
+==================================================
+Testing Context Length: 128
+==================================================
+[Dense FP16 Baseline]
+  PPL: inf | Mem: 2.75 MB | Prefill: 132.9 t/s
+
+[AdapTQ 2-bit]
+  PPL: inf (Diff: +nan) | Mem: 0.91 MB (6.25x) | Logit MSE: 1.0773e+01
+  KV Metrics -> MSE: 3.2171e-01 | Cosine: 0.9437 | MaxErr: 5.78
+  Speed -> Prefill: 37.9 t/s | Decode: 0.4 t/s
+
+[AdapTQ 3-bit]
+  PPL: inf (Diff: +nan) | Mem: 1.27 MB (4.49x) | Logit MSE: 9.8656e+00
+  KV Metrics -> MSE: 9.3000e-02 | Cosine: 0.9837 | MaxErr: 2.43
+  Speed -> Prefill: 34.0 t/s | Decode: 0.4 t/s
+
+[AdapTQ 4-bit]
+  PPL: inf (Diff: +nan) | Mem: 1.62 MB (3.51x) | Logit MSE: 9.2931e+00
+  KV Metrics -> MSE: 2.5037e-02 | Cosine: 0.9955 | MaxErr: 1.29
+  Speed -> Prefill: 35.5 t/s | Decode: 0.4 t/s
+
+==================================================
+Testing Context Length: 256
+==================================================
+[Dense FP16 Baseline]
+  PPL: inf | Mem: 5.50 MB | Prefill: 1050.3 t/s
+
+[AdapTQ 2-bit]
+  PPL: inf (Diff: +nan) | Mem: 1.77 MB (6.32x) | Logit MSE: 8.3302e+00
+  KV Metrics -> MSE: 3.2940e-01 | Cosine: 0.9436 | MaxErr: 5.78
+  Speed -> Prefill: 39.8 t/s | Decode: 0.2 t/s
+
+[AdapTQ 3-bit]
+  PPL: inf (Diff: +nan) | Mem: 2.47 MB (4.53x) | Logit MSE: 6.5602e+00
+  KV Metrics -> MSE: 9.5291e-02 | Cosine: 0.9837 | MaxErr: 2.43
+  Speed -> Prefill: 35.5 t/s | Decode: 0.2 t/s
+
+[AdapTQ 4-bit]
+  PPL: inf (Diff: +nan) | Mem: 3.17 MB (3.53x) | Logit MSE: 6.3311e+00
+  KV Metrics -> MSE: 2.5451e-02 | Cosine: 0.9955 | MaxErr: 1.37
+  Speed -> Prefill: 36.1 t/s | Decode: 0.2 t/s
+
+==================================================
+Testing Context Length: 512
+==================================================
+[Dense FP16 Baseline]
+  PPL: inf | Mem: 11.00 MB | Prefill: 1846.3 t/s
+
+[AdapTQ 2-bit]
+  PPL: inf (Diff: +nan) | Mem: 3.49 MB (6.36x) | Logit MSE: 6.2283e+00
+  KV Metrics -> MSE: 3.3922e-01 | Cosine: 0.9434 | MaxErr: 5.78
+  Speed -> Prefill: 39.3 t/s | Decode: 0.1 t/s
+
+[AdapTQ 3-bit]
+  PPL: inf (Diff: +nan) | Mem: 4.88 MB (4.55x) | Logit MSE: 7.4709e+00
+  KV Metrics -> MSE: 9.8525e-02 | Cosine: 0.9837 | MaxErr: 2.71
+  Speed -> Prefill: 36.2 t/s | Decode: 0.1 t/s
+
+[AdapTQ 4-bit]
+  PPL: inf (Diff: +nan) | Mem: 6.26 MB (3.54x) | Logit MSE: 9.7870e+00
+  KV Metrics -> MSE: 2.6476e-02 | Cosine: 0.9955 | MaxErr: 1.42
+  Speed -> Prefill: 36.9 t/s | Decode: 0.1 t/s
+
+==================================================
+Testing Context Length: 1024
+==================================================
+[Dense FP16 Baseline]
+  PPL: inf | Mem: 22.00 MB | Prefill: 1828.6 t/s
+
+[AdapTQ 2-bit]
+  PPL: inf (Diff: +nan) | Mem: 6.93 MB (6.38x) | Logit MSE: 1.0512e+01
+  KV Metrics -> MSE: 3.5309e-01 | Cosine: 0.9429 | MaxErr: 5.78
+  Speed -> Prefill: 39.0 t/s | Decode: 0.1 t/s
+
+[AdapTQ 3-bit]
+  PPL: inf (Diff: +nan) | Mem: 9.69 MB (4.56x) | Logit MSE: 1.2176e+01
+  KV Metrics -> MSE: 1.0324e-01 | Cosine: 0.9836 | MaxErr: 2.79
+  Speed -> Prefill: 37.2 t/s | Decode: 0.1 t/s
+
+[AdapTQ 4-bit]
+  PPL: inf (Diff: +nan) | Mem: 12.45 MB (3.55x) | Logit MSE: 1.2525e+01
+  KV Metrics -> MSE: 2.8282e-02 | Cosine: 0.9954 | MaxErr: 1.59
+  Speed -> Prefill: 38.3 t/s | Decode: 0.1 t/s
+
+==================================================
+Testing Context Length: 2048
+==================================================
+[Dense FP16 Baseline]
+  PPL: inf | Mem: 44.00 MB | Prefill: 1434.4 t/s
+
+[AdapTQ 2-bit]
+  PPL: inf (Diff: +nan) | Mem: 13.80 MB (6.39x) | Logit MSE: 1.0944e+01
+  KV Metrics -> MSE: 3.6043e-01 | Cosine: 0.9428 | MaxErr: 5.78
+  Speed -> Prefill: 40.3 t/s | Decode: 0.0 t/s
+
+[AdapTQ 3-bit]
+  PPL: inf (Diff: +nan) | Mem: 19.31 MB (4.57x) | Logit MSE: 1.2506e+01
+  KV Metrics -> MSE: 1.0567e-01 | Cosine: 0.9836 | MaxErr: 2.94
+  Speed -> Prefill: 38.5 t/s | Decode: 0.0 t/s
+
+[AdapTQ 4-bit]
+  PPL: inf (Diff: +nan) | Mem: 24.83 MB (3.55x) | Logit MSE: 1.1683e+01
+  KV Metrics -> MSE: 2.8928e-02 | Cosine: 0.9954 | MaxErr: 1.78
+  Speed -> Prefill: 39.3 t/s | Decode: 0.0 t/s
+
+==================================================
+Testing Context Length: 4096
+==================================================
+[Dense FP16 Baseline]
+  PPL: inf | Mem: 88.00 MB | Prefill: 33.2 t/s
+
+[AdapTQ 2-bit]
+  PPL: inf (Diff: +nan) | Mem: 27.55 MB (6.40x) | Logit MSE: 8.0191e+00
+  KV Metrics -> MSE: 3.4753e-01 | Cosine: 0.9430 | MaxErr: 6.63
+  Speed -> Prefill: 22.6 t/s | Decode: 0.0 t/s
+
+[AdapTQ 3-bit]
+  PPL: inf (Diff: +nan) | Mem: 38.56 MB (4.57x) | Logit MSE: 6.7069e+00
+  KV Metrics -> MSE: 1.0037e-01 | Cosine: 0.9836 | MaxErr: 3.27
+  Speed -> Prefill: 14.6 t/s | Decode: 0.0 t/s
+
+[AdapTQ 4-bit]
+  PPL: inf (Diff: +nan) | Mem: 49.58 MB (3.55x) | Logit MSE: 7.1800e+00
+  KV Metrics -> MSE: 2.7259e-02 | Cosine: 0.9955 | MaxErr: 1.68
+  Speed -> Prefill: 11.6 t/s | Decode: 0.0 t/s
+
+Saved results to adaptq/research/results/validation_TinyLlama_TinyLlama-1.1B-Chat-v1.0.json

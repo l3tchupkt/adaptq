@@ -1,0 +1,131 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading Qwen/Qwen2-0.5B on cuda...
+
+==================================================
+Testing Context Length: 128
+==================================================
+[Dense FP16 Baseline]
+  PPL: inf | Mem: 1.50 MB | Prefill: 111.2 t/s
+
+[AdapTQ 2-bit]
+  PPL: inf (Diff: +nan) | Mem: 0.50 MB (6.25x) | Logit MSE: 8.7840e+00
+  KV Metrics -> MSE: 4.0165e+00 | Cosine: 0.9451 | MaxErr: 55.51
+  Speed -> Prefill: 63.4 t/s | Decode: 0.7 t/s
+
+[AdapTQ 3-bit]
+  PPL: inf (Diff: +nan) | Mem: 0.69 MB (4.49x) | Logit MSE: 6.7364e+00
+  KV Metrics -> MSE: 1.1880e+00 | Cosine: 0.9839 | MaxErr: 31.62
+  Speed -> Prefill: 64.1 t/s | Decode: 0.7 t/s
+
+[AdapTQ 4-bit]
+  PPL: inf (Diff: +nan) | Mem: 0.89 MB (3.51x) | Logit MSE: 8.5657e+00
+  KV Metrics -> MSE: 2.9485e-01 | Cosine: 0.9957 | MaxErr: 12.16
+  Speed -> Prefill: 66.9 t/s | Decode: 0.8 t/s
+
+==================================================
+Testing Context Length: 256
+==================================================
+[Dense FP16 Baseline]
+  PPL: inf | Mem: 3.00 MB | Prefill: 1354.4 t/s
+
+[AdapTQ 2-bit]
+  PPL: inf (Diff: +nan) | Mem: 0.97 MB (6.32x) | Logit MSE: 6.0033e+00
+  KV Metrics -> MSE: 4.0432e+00 | Cosine: 0.9452 | MaxErr: 55.51
+  Speed -> Prefill: 73.0 t/s | Decode: 0.4 t/s
+
+[AdapTQ 3-bit]
+  PPL: inf (Diff: +nan) | Mem: 1.35 MB (4.53x) | Logit MSE: 5.0545e+00
+  KV Metrics -> MSE: 1.1854e+00 | Cosine: 0.9840 | MaxErr: 31.62
+  Speed -> Prefill: 66.9 t/s | Decode: 0.4 t/s
+
+[AdapTQ 4-bit]
+  PPL: inf (Diff: +nan) | Mem: 1.73 MB (3.53x) | Logit MSE: 4.8892e+00
+  KV Metrics -> MSE: 2.9470e-01 | Cosine: 0.9957 | MaxErr: 12.16
+  Speed -> Prefill: 65.1 t/s | Decode: 0.4 t/s
+
+==================================================
+Testing Context Length: 512
+==================================================
+[Dense FP16 Baseline]
+  PPL: inf | Mem: 6.00 MB | Prefill: 3132.7 t/s
+
+[AdapTQ 2-bit]
+  PPL: inf (Diff: +nan) | Mem: 1.90 MB (6.36x) | Logit MSE: 4.3654e+00
+  KV Metrics -> MSE: 4.0708e+00 | Cosine: 0.9451 | MaxErr: 55.65
+  Speed -> Prefill: 69.3 t/s | Decode: 0.2 t/s
+
+[AdapTQ 3-bit]
+  PPL: inf (Diff: +nan) | Mem: 2.66 MB (4.55x) | Logit MSE: 4.0340e+00
+  KV Metrics -> MSE: 1.1900e+00 | Cosine: 0.9840 | MaxErr: 32.62
+  Speed -> Prefill: 64.1 t/s | Decode: 0.2 t/s
+
+[AdapTQ 4-bit]
+  PPL: inf (Diff: +nan) | Mem: 3.39 MB (3.54x) | Logit MSE: 4.1227e+00
+  KV Metrics -> MSE: 2.9784e-01 | Cosine: 0.9956 | MaxErr: 13.00
+  Speed -> Prefill: 66.4 t/s | Decode: 0.5 t/s
+
+==================================================
+Testing Context Length: 1024
+==================================================
+[Dense FP16 Baseline]
+  PPL: inf | Mem: 12.00 MB | Prefill: 2954.7 t/s
+
+[AdapTQ 2-bit]
+  PPL: inf (Diff: +nan) | Mem: 3.78 MB (6.38x) | Logit MSE: 2.4401e+01
+  KV Metrics -> MSE: 4.0945e+00 | Cosine: 0.9449 | MaxErr: 55.65
+  Speed -> Prefill: 69.5 t/s | Decode: 0.1 t/s
+
+[AdapTQ 3-bit]
+  PPL: inf (Diff: +nan) | Mem: 5.28 MB (4.56x) | Logit MSE: 2.7292e+01
+  KV Metrics -> MSE: 1.1939e+00 | Cosine: 0.9839 | MaxErr: 34.63
+  Speed -> Prefill: 64.3 t/s | Decode: 0.1 t/s
+
+[AdapTQ 4-bit]
+  PPL: inf (Diff: +nan) | Mem: 6.79 MB (3.55x) | Logit MSE: 2.5713e+01
+  KV Metrics -> MSE: 2.9808e-01 | Cosine: 0.9956 | MaxErr: 13.65
+  Speed -> Prefill: 66.0 t/s | Decode: 0.1 t/s
+
+==================================================
+Testing Context Length: 2048
+==================================================
+[Dense FP16 Baseline]
+  PPL: inf | Mem: 24.00 MB | Prefill: 2823.4 t/s
+
+[AdapTQ 2-bit]
+  PPL: inf (Diff: +nan) | Mem: 7.53 MB (6.39x) | Logit MSE: 5.9375e+00
+  KV Metrics -> MSE: 4.0797e+00 | Cosine: 0.9447 | MaxErr: 55.65
+  Speed -> Prefill: 70.7 t/s | Decode: 0.1 t/s
+
+[AdapTQ 3-bit]
+  PPL: inf (Diff: +nan) | Mem: 10.53 MB (4.57x) | Logit MSE: 5.0690e+00
+  KV Metrics -> MSE: 1.1880e+00 | Cosine: 0.9839 | MaxErr: 34.77
+  Speed -> Prefill: 66.5 t/s | Decode: 0.0 t/s
+
+[AdapTQ 4-bit]
+  PPL: inf (Diff: +nan) | Mem: 13.54 MB (3.55x) | Logit MSE: 5.5365e+00
+  KV Metrics -> MSE: 2.9175e-01 | Cosine: 0.9956 | MaxErr: 14.78
+  Speed -> Prefill: 66.4 t/s | Decode: 0.1 t/s
+
+==================================================
+Testing Context Length: 4096
+==================================================
+[Dense FP16 Baseline]
+  PPL: inf | Mem: 48.00 MB | Prefill: 818.0 t/s
+
+[AdapTQ 2-bit]
+  PPL: inf (Diff: +nan) | Mem: 15.03 MB (6.40x) | Logit MSE: 1.5019e+01
+  KV Metrics -> MSE: 4.0590e+00 | Cosine: 0.9444 | MaxErr: 57.86
+  Speed -> Prefill: 62.8 t/s | Decode: 0.0 t/s
+
+[AdapTQ 3-bit]
+  PPL: inf (Diff: +nan) | Mem: 21.03 MB (4.57x) | Logit MSE: 1.5705e+01
+  KV Metrics -> MSE: 1.1697e+00 | Cosine: 0.9839 | MaxErr: 36.54
+  Speed -> Prefill: 68.9 t/s | Decode: 0.0 t/s
+
+[AdapTQ 4-bit]
+  PPL: inf (Diff: +nan) | Mem: 27.04 MB (3.55x) | Logit MSE: 1.3975e+01
+  KV Metrics -> MSE: 2.9017e-01 | Cosine: 0.9956 | MaxErr: 14.78
+  Speed -> Prefill: 64.0 t/s | Decode: 0.0 t/s
+
+Saved results to adaptq/research/results/validation_Qwen_Qwen2-0.5B.json
