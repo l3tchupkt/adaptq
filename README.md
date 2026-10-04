@@ -23,7 +23,7 @@
 
 **AdapTQ** is a production-grade C++17 KV cache quantization engine for Large Language Model inference on edge and memory-constrained systems.
 
-It runs entirely on the CPU, requires **no model changes**, and fits seamlessly into existing inference pipelines (Hugging Face Transformers, llama.cpp, Ollama) with minimal wrapper logic. By leveraging Fast Walsh-Hadamard Transforms (FWHT) and branchless SIMD optimizations, AdapTQ achieves **4–8× KV memory reduction** while matching or exceeding FP16 attention throughput at large context lengths.
+It runs entirely on the CPU, requires **no model changes**, and fits seamlessly into existing inference pipelines (Hugging Face Transformers, llama-cpp-python) and provides REST-only integration for Ollama with minimal wrapper logic. By leveraging Fast Walsh-Hadamard Transforms (FWHT) and branchless SIMD optimizations, AdapTQ achieves **4–8× KV memory reduction** while matching or exceeding FP16 attention throughput at large context lengths.
 
 ## 📑 Table of Contents
 

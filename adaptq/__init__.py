@@ -60,9 +60,9 @@ def create_adapter(backend: str, **kwargs):
     Available backends (install as needed):
         "transformers"      pip install transformers accelerate
         "llama_cpp_python"  pip install llama-cpp-python
-        "ollama"            Requires Ollama server at localhost:11434
-        "vllm"              pip install vllm  (CUDA GPU required)
-        "mlx"               pip install mlx mlx-lm  (Apple Silicon only)
+        "ollama"            Ollama REST API (REST integration only)
+        "vllm"              (STUB for V3) pip install vllm (CUDA GPU required)
+        "mlx"               (STUB for V3) pip install mlx mlx-lm (Apple Silicon only)
 
     Example:
         from adaptq import create_adapter
