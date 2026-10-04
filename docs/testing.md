@@ -21,18 +21,18 @@ AdapTQ has three test layers that together validate the full stack:
 
 ```bash
 cd adapTQ
-cmake -B build_v2 -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build_v2 --parallel 4
-cd build_v2 && ctest --output-on-failure -j4
+cmake -B build_release -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build_release --parallel 4
+cd build_release && ctest --output-on-failure -j4
 ```
 
 ### Windows (MSVC + Ninja) — from VS Developer Command Prompt
 
 ```cmd
 cd adapTQ
-cmake -B build_v2 -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=cl
-cmake --build build_v2 --parallel
-cd build_v2 && ctest --output-on-failure
+cmake -B build_release -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=cl
+cmake --build build_release --parallel
+cd build_release && ctest --output-on-failure
 ```
 
 ### Python validation suite (Windows or Linux)

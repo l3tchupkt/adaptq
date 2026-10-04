@@ -85,7 +85,7 @@ class AdapTQCache(DynamicCache):
         self._adaptq_error = ""
 
         if self.use_pt_cache:
-            from adaptq.research.packed_kv_pt import PackedKVCachePT
+            from adaptq.reference.packed_kv_pt import PackedKVCachePT
             self._packed_cache = PackedKVCachePT(
                 bits=adaptq_bits,
                 head_dim=head_dim,

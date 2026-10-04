@@ -1,5 +1,5 @@
 """
-adaptq/research/packed_kv.py
+adaptq/reference/packed_kv.py
 ============================
 Issue #230: Reference packed KV cache implementation.
 
@@ -394,7 +394,7 @@ class HeadCache:
 # ---------------------------------------------------------------------------
 
 class PackedKVCache:
-    """Reference packed KV cache for AdapTQ research.
+    """Reference packed KV cache for AdapTQ.
 
     This is the authoritative compressed-KV storage. No dense FP16/FP32 copy
     is maintained — the packed representation IS the cache.

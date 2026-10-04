@@ -74,20 +74,16 @@ AdapTQ seamlessly injects itself into any standard `transformers` generation pip
 
 ```python
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
 from adaptq import create_adapter
-
-model_id = "Qwen/Qwen2-0.5B"
-tokenizer = AutoTokenizer.from_pretrained(model_id)
-model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float32)
+from adaptq.runtime_py.metadata import ModelConfig
 
 # Wrap the model with AdapTQ (4-bit quantization, 2048 capacity)
-adapter = create_adapter("transformers", model=model, bits=4, capacity=2048)
+adapter = create_adapter("transformers")
+adapter.load_model(ModelConfig(model_path="Qwen/Qwen2-0.5B", adaptq_bits=4, adaptq_capacity=2048))
 
-# Generate normally! The KV cache is now fully compressed and managed in C++.
-inputs = tokenizer("The future of AI on edge devices is", return_tensors="pt")
-outputs = model.generate(**inputs, max_new_tokens=50)
-print(tokenizer.decode(outputs[0]))
+# Generate normally! The KV cache is now fully compressed and managed.
+result = adapter.generate("The future of AI on edge devices is", max_new_tokens=50)
+print(result.text)
 ```
 
 ### 3. llama.cpp Integration
@@ -95,16 +91,20 @@ print(tokenizer.decode(outputs[0]))
 For ultra-fast GGUF edge inference, wrap your `Llama` instance:
 
 ```python
-from llama_cpp import Llama
 from adaptq import create_adapter
-
-llm = Llama(model_path="models/qwen2-0.5b.Q4_K_M.gguf", n_ctx=2048)
+from adaptq.runtime_py.metadata import ModelConfig
 
 # Hook AdapTQ into llama.cpp's evaluation loop
-adapter = create_adapter("llama_cpp_python", model=llm, bits=4)
+adapter = create_adapter("llama_cpp_python")
+adapter.load_model(ModelConfig(
+    model_path="models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+    n_ctx=2048,
+    n_threads=4,
+    adaptq_bits=4,
+))
 
-response = llm.create_completion("Hello, how does KV quantization work?", max_tokens=100)
-print(response["choices"][0]["text"])
+result = adapter.generate("Hello, how does KV quantization work?", max_new_tokens=100)
+print(result.text)
 ```
 
 ---
@@ -113,14 +113,10 @@ print(response["choices"][0]["text"])
 
 At large context lengths, attention becomes profoundly memory-bandwidth bound. AdapTQ mitigates this by compressing the KV cache, significantly reducing the bytes fetched from RAM during generation.
 
-| Metric                          | FP16 Baseline | AdapTQ (4-bit) | Improvement        |
-| :------------------------------ | :------------ | :------------- | :----------------- |
-| **Memory per Token (d=128)**    | 512 bytes     | 64 bytes       | **8.0× smaller**   |
-| **Throughput (Seq > 2k)**       | ~720 tok/s    | ~1,139 tok/s   | **1.5× faster**    |
-| **Cosine Similarity (Quality)** | 1.000         | 0.947          | Minimal Distortion |
-
-![AdapTQ Performance Benchmarks](adaptq_realtime_bench.png)
-_(Figure: Real-world benchmark of AdapTQ 4-bit vs FP32 showcasing bounded latency, substantial speedups at high sequence lengths, and hybrid-fallback quality maintenance.)_
+| Metric                          | Theoretical FP16 | AdapTQ (4-bit) | Raw Compression Ratio |
+| :------------------------------ | :--------------- | :------------- | :-------------------- |
+| **Memory per Token (d=128)**    | 512 bytes        | 64 bytes       | **8.0× smaller**      |
+| **Memory per Token (d=128)**    | 512 bytes        | 48 bytes       | **10.6× smaller** (3-bit)|
 
 ### How it works (HAR + VQ)
 
