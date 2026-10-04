@@ -136,9 +136,9 @@ jobs:
           python tests/test_accuracy.py
 
       - name: Pytest Execution (Integration & Unit)
-        # Avoid running tests that require a GPU since GitHub Actions runner is CPU-only
+        # Avoid running tests that require a GPU, live server, or slow downloads
         run: |
-          pytest tests integration_tests -m "not gpu_required"
+          pytest tests integration_tests -m "not gpu_required and not slow" -q
 
       - name: Benchmark (Informational)
         run: |
