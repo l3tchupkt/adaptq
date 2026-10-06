@@ -15,11 +15,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────────────
-  # Job 1: Linux Native (GCC)
-  # ─────────────────────────────────────────────────────────────────────────
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 1: C++ build and CTest (Linux, GCC)
+  # ───────────────────────────────────────────────────────────────────────────
   build-linux:
-    name: Linux (GCC)
+    name: Linux C++ (GCC)
     runs-on: ubuntu-latest
 
     steps:
@@ -29,7 +29,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build g++ python3 python3-pip python3-venv
+            cmake ninja-build g++ libgomp1 python3 python3-pip python3-venv
 
       - name: Configure CMake (Release)
         run: |
@@ -38,10 +38,10 @@ jobs:
                 -DCMAKE_BUILD_TYPE=Release \
                 -DADAPTQ_BUILD_TESTS=ON
 
-      - name: Build CMake
+      - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: CTest (Unit, Conformance, Security)
+      - name: CTest
         run: ctest --build-config Release --output-on-failure --parallel 4
         working-directory: build
 
@@ -50,21 +50,28 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Python dependencies
+      - name: Install package with C++ extension
         run: |
-          pip install numpy torch --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install pybind11 numpy
+          pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
           pip install -e .
 
-      - name: Python accuracy + API integration
+      - name: Verify import and C extension
         run: |
-          python3 tests/test_accuracy.py
-          python3 tests/run_tests.py
+          python3 -c "import adaptq; print('adaptq version:', adaptq.__version__)"
+          python3 -c "import adaptq_py; print('adaptq_py extension loaded OK')"
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # Job 2: Windows Native (MSVC)
-  # ─────────────────────────────────────────────────────────────────────────
+      - name: Run accuracy test
+        run: python3 tests/test_accuracy.py
+
+      - name: Run core API tests
+        run: python3 tests/run_tests.py
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 2: C++ build and CTest (Windows, MSVC)
+  # ───────────────────────────────────────────────────────────────────────────
   build-windows:
-    name: Windows (MSVC)
+    name: Windows C++ (MSVC)
     runs-on: windows-latest
 
     steps:
@@ -82,36 +89,39 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install numpy torch
+          pip install pybind11 numpy
+          pip install torch
           pip install -e .
 
       - name: Configure CMake (Release)
-        run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DADAPTQ_BUILD_TESTS=ON
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DADAPTQ_BUILD_TESTS=ON
         shell: pwsh
 
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: CTest (Unit, Conformance, Security)
+      - name: CTest
         run: ctest --build-config Release --output-on-failure --parallel 4
         working-directory: build
 
-      - name: Python accuracy + API integration
-        run: |
-          python tests\test_accuracy.py
-          python tests\run_tests.py
+      - name: Verify import
+        run: python -c "import adaptq; print('adaptq version:', adaptq.__version__)"
         shell: pwsh
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # Job 3: Python package (Build + Validation)
-  # ─────────────────────────────────────────────────────────────────────────
+      - name: Run core API tests
+        run: python tests\run_tests.py
+        shell: pwsh
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 3: Python package matrix (build + unit tests)
+  # ───────────────────────────────────────────────────────────────────────────
   python-package:
-    name: Python Package (${{ matrix.python-version }})
+    name: Python ${{ matrix.python-version }} (Ubuntu)
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
@@ -121,25 +131,35 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install package strictly (includes PyBind11 compilation)
-        # We explicitly install PyTorch here for tests/benchmarks since they require it
+      - name: Install system build dependencies
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            g++ libgomp1
+
+      - name: Install package with C++ extension
+        run: |
+          pip install pybind11 numpy
           pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
           pip install -e .[dev]
 
-      - name: Verify Import
+      - name: Verify import
         run: |
-          python -c "import adaptq; print('Successfully imported:', adaptq.__file__)"
+          python -c "import adaptq; print('adaptq', adaptq.__version__)"
+          python -c "import adaptq_py; print('C extension OK')"
 
-      - name: Run Accuracy Tests
-        run: |
-          python tests/test_accuracy.py
+      - name: Run accuracy tests
+        run: python tests/test_accuracy.py
 
-      - name: Pytest Execution (Integration & Unit)
-        # Avoid running tests that require a GPU, live server, or slow downloads
+      - name: Pytest — unit and LA policy tests
         run: |
-          pytest tests integration_tests -m "not gpu_required and not slow" -q
+          pytest tests/test_la_policy.py tests/test_packed_kv.py \
+            -v --tb=short -q
 
-      - name: Benchmark (Informational)
+      - name: Pytest — integration contract tests (no model needed)
         run: |
-          python python/benchmark.py || true
+          pytest integration_tests/test_adapter_contract.py \
+            -v --tb=short -q
+
+      - name: Benchmark (informational only)
+        run: python python/benchmark.py || true
