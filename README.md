@@ -1,6 +1,6 @@
 <div align="center">
   <h1>AdapTQ</h1>
-  <p><b>Adaptive Streaming Vector Quantization KV Cache for LLMs</b></p>
+  <p><b>KV-Cache Quantization for CPU-Based LLM Inference</b></p>
 
   <a href="https://pypi.org/project/adaptq/">
     <img src="https://img.shields.io/pypi/v/adaptq?color=blue&label=PyPI" alt="PyPI version">
@@ -14,197 +14,223 @@
   <a href="https://github.com/l3tchupkt/adaptq/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
   </a>
-  <a href="https://github.com/l3tchupkt/adaptq">
-    <img src="https://img.shields.io/badge/C++-17-blue.svg" alt="C++17">
-  </a>
 </div>
 
 <br>
 
-**AdapTQ** is a production-grade C++17 KV cache quantization engine for Large Language Model inference on edge and memory-constrained systems.
+**AdapTQ** is a CPU-oriented KV-cache quantization engine for Large Language Model inference. It implements Rademacher sign randomization combined with the Fast Walsh-Hadamard Transform (FWHT) to precondition KV vectors before scalar quantization, substantially reducing quantization distortion compared to direct scalar quantization.
 
-It runs entirely on the CPU, requires **no model changes**, and fits seamlessly into existing inference pipelines (Hugging Face Transformers, llama-cpp-python) and provides REST-only integration for Ollama with minimal wrapper logic. By leveraging Fast Walsh-Hadamard Transforms (FWHT) and branchless SIMD optimizations, AdapTQ achieves **4–8× KV memory reduction** while matching or exceeding FP16 attention throughput at large context lengths.
+**Current version: 0.2.3**
 
-## 📑 Table of Contents
-
-- [✨ Key Features](#-key-features)
-- [🚀 Quick Start](#-quick-start)
-- [📊 Performance & Architecture](#-performance--architecture)
-- [⏪ Replay & Compare CLI (V2)](#-replay--compare-cli-v2)
-- [🛠️ Build from Source](#️-build-from-source)
-- [📚 Project Structure](#-project-structure)
-- [❓ FAQ & Troubleshooting](#-faq--troubleshooting)
-- [🤝 Contributing](#-contributing)
-- [📜 Citation](#-citation)
-- [📄 License](#-license)
+> **Research note:** AdapTQ-LA (Layer-Aware Asymmetric KV-Cache Quantization) is an active research configuration. See [Research Configuration](#research-configuration-adaptq-la) and the [companion research repository](https://github.com/l3tchupkt/adaptq-research) for validated experimental results.
 
 ---
 
-## ✨ Key Features
+## What AdapTQ Does
 
-- **Extreme Memory Compression**: 4–8× smaller KV cache footprints via 2-bit, 3-bit, and 4-bit Max-Lloyd quantization.
-- **Unified SIMD Pipeline**: 2/3/4-bit decoding shares a single, quad-unrolled branchless loop using AVX2 intrinsics. No scalar fallbacks.
-- **Hybrid Execution**: Automatically routes short sequences (≤ 256 tokens) to FP32 and long sequences to quantized SIMD, maximizing speed without data copying.
-- **Multi-Backend Support (V2.1)**: Drop-in wrappers for `transformers` and `llama-cpp-python`.
-- **Deterministic Replay (V2)**: Save `.aqss` session snapshots to disk, branch conversations at any token, and perfectly replay states with zero context-recomputation overhead.
+AdapTQ stores KV cache vectors in a quantized form using this pipeline per token:
+
+1. **Rademacher sign randomization** — multiply each dimension by a fixed ±1 sign vector (sampled once per layer, stored as bytes)
+2. **FWHT** — apply Fast Walsh-Hadamard Transform in O(d log d) to homogenize outliers
+3. **Scalar quantization** — apply Max-Lloyd codebook quantization at 2, 3, or 4 bits
+4. **Packed storage** — store bit-packed indices and per-vector scale factors in a flat ring buffer
+
+During attention, queries undergo the same rotation; dot products are computed directly from packed indices via a centroid lookup table without full dequantization.
 
 ---
 
-## 🚀 Quick Start
+## Current Capabilities (v0.2.3)
 
-### 1. Installation
+- **Supported bit widths:** 2-bit, 3-bit, 4-bit quantization; `bits=16` for FP32 passthrough (unquantized)
+- **Asymmetric K/V precision:** K and V can be quantized at independent bit widths
+- **C++17 core** with AVX2 SIMD path (x86 only); scalar fallback for non-AVX2
+- **Python bindings** via pybind11
+- **Hybrid execution:** Short sequences below a configurable threshold use raw FP32 cache (no decode overhead)
+- **Ring buffer:** Fixed capacity, O(1) append and eviction
+- **Multi-backend Python runtime** for HuggingFace Transformers and llama-cpp-python
 
-Install directly from PyPI (includes pre-built C++ extensions for Linux/Windows/macOS):
+---
+
+## Quick Start
+
+### Installation
 
 ```bash
 pip install adaptq
 ```
 
-_To install with specific backend dependencies:_
+With backend dependencies:
 
 ```bash
-pip install adaptq[transformers]   # For Hugging Face support
-pip install adaptq[llama]          # For llama-cpp-python support
-pip install adaptq[all-backends]   # Install all supported integrations
+pip install adaptq[transformers]     # HuggingFace support
+pip install adaptq[llama]            # llama-cpp-python support
 ```
 
-### 2. Hugging Face Transformers Integration
+### Basic API
 
-AdapTQ seamlessly injects itself into any standard `transformers` generation pipeline:
+```python
+import numpy as np
+from adaptq import Engine
+
+# Create a single-layer KV cache engine
+# K at 4-bit, V at 2-bit — the AdapTQ-LA research configuration
+engine = Engine(dim=64, heads=4, k_bits=4, v_bits=2, capacity=2048, seed=42)
+
+# Append K and V for each generated token
+k = np.random.randn(4, 64).astype(np.float32)  # shape: (heads, dim)
+v = np.random.randn(4, 64).astype(np.float32)
+engine.append(k, v)
+
+# Compute attention output for the current query
+q = np.random.randn(4, 64).astype(np.float32)
+out = engine.compute(q)  # shape: (heads, dim)
+
+# Check KV cache memory usage
+print(f"KV bytes: {engine.kv_bytes}")
+
+# Reset between sequences
+engine.reset()
+```
+
+### PyTorch Integration
 
 ```python
 import torch
-from adaptq import create_adapter
-from adaptq.runtime_py.metadata import ModelConfig
+from adaptq.torch_adapter import AdaptQAttention
 
-# Wrap the model with AdapTQ (4-bit quantization, 2048 capacity)
-adapter = create_adapter("transformers")
-adapter.load_model(ModelConfig(model_path="Qwen/Qwen2-0.5B", adaptq_bits=4, adaptq_capacity=2048))
+# Wraps the C++ engine in a PyTorch nn.Module
+layer = AdaptQAttention(dim=64, heads=4, k_bits=4, v_bits=2, capacity=2048)
 
-# Generate normally! The KV cache is now fully compressed and managed.
-result = adapter.generate("The future of AI on edge devices is", max_new_tokens=50)
-print(result.text)
+q = torch.randn(1, 4, 64)  # (batch=1, heads, dim)
+k = torch.randn(1, 4, 64)
+v = torch.randn(1, 4, 64)
+out = layer(q, k, v)        # (1, 4, 64)
 ```
 
-### 3. llama.cpp Integration
-
-For ultra-fast GGUF edge inference, wrap your `Llama` instance:
-
-```python
-from adaptq import create_adapter
-from adaptq.runtime_py.metadata import ModelConfig
-
-# Hook AdapTQ into llama.cpp's evaluation loop
-adapter = create_adapter("llama_cpp_python")
-adapter.load_model(ModelConfig(
-    model_path="models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-    n_ctx=2048,
-    n_threads=4,
-    adaptq_bits=4,
-))
-
-result = adapter.generate("Hello, how does KV quantization work?", max_new_tokens=100)
-print(result.text)
-```
+**Constraints:** CPU only; batch size must be 1.
 
 ---
 
-## 📊 Performance & Architecture
+## Research Configuration: AdapTQ-LA
 
-At large context lengths, attention becomes profoundly memory-bandwidth bound. AdapTQ mitigates this by compressing the KV cache, significantly reducing the bytes fetched from RAM during generation.
+**AdapTQ-LA** (Layer-Aware Asymmetric KV-Cache Quantization) is a research configuration evaluated in the companion repository. It applies the following layer-aware policy to a multi-layer LLM:
 
-| Metric                          | Theoretical FP16 | AdapTQ (4-bit) | Raw Compression Ratio |
-| :------------------------------ | :--------------- | :------------- | :-------------------- |
-| **Memory per Token (d=128)**    | 512 bytes        | 64 bytes       | **8.0× smaller**      |
-| **Memory per Token (d=128)**    | 512 bytes        | 48 bytes       | **10.6× smaller** (3-bit)|
+| Layer | K precision | V precision |
+| :--- | :--- | :--- |
+| Layer 0 | FP16 (unquantized) | Configured precision |
+| Layers 1+ | k_bits | v_bits |
 
-### How it works (HAR + VQ)
+**Validated configurations:** K4-V2 and K3-V2 with Layer-0 K FP16 protection.
+**Evaluated models:** Qwen2-0.5B, TinyLlama-1.1B.
+**Evaluated context lengths:** 512 and 1024 tokens.
 
-1. **Rotation**: `y = (1/√d) * H * D * x` (Hadamard Accelerated Rotation via FWHT). This smooths outliers, transforming the input distribution to near-Gaussian.
-2. **Quantization**: Vectors are scalar-quantized using optimal Max-Lloyd codebooks.
-3. **Inference**: Queries are rotated once; dot products execute directly against bit-packed LUTs using AVX2 SIMD instructions, completely bypassing full dequantization inside the hot attention loop.
+This policy is implementable with the current API by creating one `Engine` per layer and using `k_bits=16` for Layer 0:
+
+```python
+# AdapTQ-LA: one Engine per layer
+engines = []
+for layer_idx in range(num_layers):
+    k_bits = 16 if layer_idx == 0 else 4  # Layer 0: FP16 K passthrough
+    v_bits = 2
+    engines.append(Engine(dim=head_dim, heads=n_kv_heads,
+                           k_bits=k_bits, v_bits=v_bits,
+                           capacity=max_ctx, seed=42 ^ layer_idx))
+```
+
+### Evaluated Perplexity (Qwen2-0.5B, seed 2026, context 1024, next-token PPL)
+
+| Configuration | PPL | KV Memory |
+| :--- | :--- | :--- |
+| Dense FP16 | 1.006 | 4.21 MB |
+| Uniform 4-bit | 16.65 | 3.81 MB |
+| Uniform 3-bit | 264.3 | 2.96 MB |
+| **AdapTQ-LA K4-V2** | **1.026** | **3.40 MB** |
+| **AdapTQ-LA K3-V2** | **1.241** | **3.00 MB** |
+
+Source: `data/results/v2_evaluation_Qwen_Qwen2-0.5B.json` in the research repository.
+
+### Evaluated Memory Compression (Production C++ core, dim=64, heads=14, context=512)
+
+| Configuration | KV Bytes | vs Dense |
+| :--- | :--- | :--- |
+| Dense (FP16) | 3,670,016 | 1.0× |
+| AdapTQ-LA K4-V2 | 344,064 | **~10.7×** |
+| AdapTQ-LA K3-V2 | 286,720 | **~12.8×** |
+
+> **Important:** Compression ratios depend on head dimension, context length, and the FP16 Layer-0 overhead. These numbers reflect the specific benchmark configuration above. Do not generalize without measuring your target configuration.
+
+### Benchmark Limitations
+
+- All kernel benchmarks are **isolated attention-step measurements** on CPU. No end-to-end generation speedup has been demonstrated.
+- The Python HF integration path introduces framework overhead that prevents reliable E2E throughput measurement through the research simulator.
+- Only two small models (0.5B, 1.1B) have been evaluated. Generalization to larger models is unknown.
+- Only next-token perplexity has been measured. Downstream task accuracy (MMLU, GSM8K) has not been evaluated.
 
 ---
 
-## ⏪ Replay & Compare CLI (V2)
-
-AdapTQ introduces `.aqss` (AdapTQ Session Snapshot) binary files. You can save exact conversational states and branch them instantaneously.
-
-### Using the Python API:
-
-```python
-from adaptq import ReplayEngine, snapshot_info
-
-# Inspect a saved session
-print(snapshot_info("chat_session.aqss"))
-
-# Replay deterministically and branch from token 128
-engine = ReplayEngine()
-result = engine.replay("chat_session.aqss", from_token=128)
-print(f"Replayed in {result.wall_time_ms} ms")
-```
-
-### Using the C++ CLI:
-
-Compare the quality and latency of different quantization strategies on real sessions:
+## Building from Source
 
 ```bash
-# Build the native CLI
-cmake -B build_release -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build_release --parallel
+git clone https://github.com/l3tchupkt/adaptq
+cd adaptq
 
-# Compare FP32 vs 4-bit Quantization
-./build_release/adapTQ_demo compare chat_session.aqss \
-  --strategies har_fixed,fp_passthrough \
-  --format md
+# Build C++ extension
+pip install -e ".[dev]"
+
+# Or build manually
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+```
+
+Run tests:
+
+```bash
+pytest tests/ -v
+```
+
+Run isolated benchmarks:
+
+```bash
+python -m benchmarks.benchmark_adaptq_la --dim 64 --heads 14 --seq 512
 ```
 
 ---
 
-## 📚 Project Structure
+## Project Structure
 
-- `core/`: Highly optimized SIMD FWHT and Max-Lloyd codebooks.
-- `attention/`: Hybrid execution attention loops.
-- `adapters/`: Native C++ pybind11 integration layer.
-- `runtime/`: Session orchestration and dynamic plugin registry.
-- `replay/`: `.aqss` session snapshot serialization and branching engine.
-- `adaptq/runtime_py/`: Python multi-backend registry (`transformers`, `llama_cpp_python`).
-- `examples/`: Ready-to-run integration demos.
-
-For source builds, local development, testing, and contribution guidelines, see
-[CONTRIBUTING.md](CONTRIBUTING.md).
-
----
-
-## ❓ FAQ & Troubleshooting
-
-**Q: My model outputs gibberish when using 2-bit quantization.**
-
-> A: 2-bit quantization is highly aggressive (16x compression). It is recommended only for robust, large-scale models (>7B parameters) or for highly structured summarization tasks. Stick to `bits=4` for standard chat models like Qwen2-0.5B or TinyLlama.
-
-**Q: Does AdapTQ require CUDA/GPU?**
-
-> A: No. AdapTQ is explicitly designed for **CPU edge inference**. It relies heavily on AVX2/FMA instructions found on standard x86 processors. ARM NEON support is planned for future roadmaps.
-
-**Q: C++ compilation fails with `unrecognized command line option '-mavx2'`**
-
-> A: Your compiler or architecture does not support AVX2. AdapTQ currently requires an x86_64 CPU with AVX2 and FMA extensions.
+```
+core/          # FWHT, codebooks, quantizer
+attention/     # Attention computation (AVX2 + scalar)
+adaptq/        # Python package
+  core.py      # Engine wrapper
+  torch_adapter.py  # PyTorch AdaptQAttention
+  runtime_py/  # Multi-backend Python runtimes
+tests/         # Unit and integration tests
+benchmarks/    # Isolated kernel benchmarks
+adapters/      # pybind11 C++/Python bridge
+```
 
 ---
 
-## 📜 Citation
+## Research Repository
 
-If you use AdapTQ in your research, please cite:
+All experiments, raw JSON results, methodology documentation, and the scientific manuscript are in the companion repository:
+
+[https://github.com/l3tchupkt/adaptq-research](https://github.com/l3tchupkt/adaptq-research)
+
+---
+
+## Citation
 
 ```bibtex
-@software{adaptq2026,
-  author = {Lakshmikanthan K.},
-  title = {AdapTQ: Adaptive Streaming Vector Quantization for Edge-Deployed Large Language Models},
-  year = {2026},
-  url = {https://github.com/l3tchupkt/adaptq}
+@article{adaptq_la_2026,
+  author  = {Lakshmikanthan K.},
+  title   = {{AdapTQ-LA}: Static Layer-Aware Asymmetric {KV}-Cache Quantization},
+  year    = {2026},
+  url     = {https://github.com/l3tchupkt/adaptq}
 }
 ```
 
-## 📄 License
+## License
 
-This project is licensed under the [MIT License](LICENSE).
+MIT License. See [LICENSE](LICENSE).
