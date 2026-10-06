@@ -44,7 +44,7 @@ typedef void *adaptq_mha_t; /* opaque multi-head aggregate */
  * @param hybrid_thresh  switch to FP16 path when n_tokens < this value
  *                       (0 = always use quantized)
  */
-adaptq_ctx_t adaptq_create(int dim, int bits, int capacity, uint64_t seed,
+adaptq_ctx_t adaptq_create(int dim, int k_bits, int v_bits, int capacity, uint64_t seed,
                            float v_mass, int hybrid_thresh);
 
 /** Free a single-head context. */
@@ -88,7 +88,7 @@ size_t adaptq_kv_bytes(adaptq_ctx_t ctx);
  * All heads share the same dim, bits, capacity, v_mass, and hybrid_thresh.
  * Seeds are derived per-head as: seed ^ (layer*1000 + head).
  */
-adaptq_mha_t adaptq_mha_create(int n_heads, int dim, int bits, int capacity,
+adaptq_mha_t adaptq_mha_create(int n_heads, int dim, int k_bits, int v_bits, int capacity,
                                uint64_t base_seed, float v_mass,
                                int hybrid_thresh);
 

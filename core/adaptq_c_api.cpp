@@ -60,16 +60,16 @@ struct AdapTQMHA {
  * Single-head API
  * ----------------------------------------------------------------------- */
 
-adaptq_ctx_t adaptq_create(int dim, int bits, int capacity, uint64_t seed,
+adaptq_ctx_t adaptq_create(int dim, int k_bits, int v_bits, int capacity, uint64_t seed,
                            float v_mass, int hybrid_thresh) {
-  if (dim <= 0 || bits < 2 || bits > 4 || capacity < 0 || hybrid_thresh < 0) {
+  if (dim <= 0 || (k_bits != 16 && (k_bits < 2 || k_bits > 4)) || (v_bits != 16 && (v_bits < 2 || v_bits > 4)) || capacity < 0 || hybrid_thresh < 0) {
     set_error(ADAPTQ_ERR_INVALID_ARG, "adaptq_create: invalid dimensions or capacity");
     return nullptr;
   }
   auto *ctx = new AdapTQCtx();
   ctx->dim = dim;
   ctx->hybrid_thresh = hybrid_thresh;
-  ctx->head.init(dim, bits, capacity, seed, v_mass);
+  ctx->head.init(dim, k_bits, v_bits, capacity, seed, v_mass, hybrid_thresh);
   return ctx;
 }
 
@@ -146,10 +146,10 @@ size_t adaptq_kv_bytes(adaptq_ctx_t h) {
  * Multi-head API
  * ----------------------------------------------------------------------- */
 
-adaptq_mha_t adaptq_mha_create(int n_heads, int dim, int bits, int capacity,
+adaptq_mha_t adaptq_mha_create(int n_heads, int dim, int k_bits, int v_bits, int capacity,
                                uint64_t base_seed, float v_mass,
                                int hybrid_thresh) {
-  if (n_heads <= 0 || dim <= 0 || bits < 2 || bits > 4 || capacity < 0 || hybrid_thresh < 0) {
+  if (n_heads <= 0 || dim <= 0 || (k_bits != 16 && (k_bits < 2 || k_bits > 4)) || (v_bits != 16 && (v_bits < 2 || v_bits > 4)) || capacity < 0 || hybrid_thresh < 0) {
     set_error(ADAPTQ_ERR_INVALID_ARG, "adaptq_mha_create: invalid parameters");
     return nullptr;
   }
@@ -159,7 +159,7 @@ adaptq_mha_t adaptq_mha_create(int n_heads, int dim, int bits, int capacity,
   for (int i = 0; i < n_heads; ++i) {
     uint64_t seed = base_seed ^ ((uint64_t)i * 0xDEADBEEFCAFEULL);
     mha->heads[i] = static_cast<AdapTQCtx *>(
-        adaptq_create(dim, bits, capacity, seed, v_mass, hybrid_thresh));
+        adaptq_create(dim, k_bits, v_bits, capacity, seed, v_mass, hybrid_thresh));
   }
   return mha;
 }

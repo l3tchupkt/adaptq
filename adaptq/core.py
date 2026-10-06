@@ -14,7 +14,7 @@ class Engine:
         engine.append(k, v)
         out = engine.compute(q)
     """
-    def __init__(self, dim: int, heads: int, bits: int = 4, 
+    def __init__(self, dim: int, heads: int, k_bits: int = 4, v_bits: int = 4, 
                  capacity: int = 4096, seed: int = 42, 
                  v_mass: float = 0.95, hybrid_thresh: int = 512):
         if not _ADAPTQ_PY_AVAILABLE:
@@ -25,14 +25,16 @@ class Engine:
             )
         self.dim = dim
         self.heads = heads
-        self.bits = bits
+        self.k_bits = k_bits
+        self.v_bits = v_bits
         self.capacity = capacity
         
         # Internal state
         self._ctx = adaptq_py.MHAContext(
             n_heads=heads,
             head_dim=dim,
-            bits=bits,
+            k_bits=k_bits,
+            v_bits=v_bits,
             capacity=capacity,
             seed=seed,
             v_mass=v_mass,

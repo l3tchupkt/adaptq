@@ -13,7 +13,7 @@ def test_torch_adapter_shapes_and_dtypes():
 
     dim = 64
     heads = 2
-    layer = AdaptQAttention(dim=dim, heads=heads, bits=4, capacity=32)
+    layer = AdaptQAttention(dim=dim, heads=heads, k_bits=4, v_bits=4, capacity=32)
 
     # 1. Test invalid dimension (2D instead of 3D)
     with pytest.raises(ValueError, match="expects 3D tensors"):

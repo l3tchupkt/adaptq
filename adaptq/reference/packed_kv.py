@@ -229,25 +229,8 @@ def unpack_indices(packed: bytes, n: int, bits: int) -> np.ndarray:
 # Core quantize / dequantize
 # ---------------------------------------------------------------------------
 
-def quantize_vector(x: np.ndarray, D: np.ndarray, bits: int) -> Tuple[bytes, float]:
-    """Quantize a float vector x using the corrected pipeline (issue #229).
-
-    Args:
-        x:    float32 vector of shape (head_dim,)
-        D:    Rademacher sign vector of shape (padded,)  [±1.0 float32]
-        bits: quantization bits (2, 3, or 4)
-
-    Returns:
-        (packed_bytes, scale)
-        scale = ||x||  (L2 norm of original x)
-
-    Pipeline:
-        1. L2-normalise x
-        2. Zero-pad to len(D) = next_pow2(len(x))
-        3. fwht_forward: (1/√p)*H*D*x_hat → scale by √p → values ≈ N(0,1)
-        4. Soft-clip to ±3σ
-        5. Codebook lookup in N(0,1) domain → pack indices
-    """
+def quantize_vector(x: np.ndarray, D: np.ndarray, bits: int, skip_fwht: bool = False, skip_rademacher: bool = False) -> Tuple[bytes, float]:
+    """Quantize a float vector x using the corrected pipeline (issue #229)."""
     dim = len(x)
     padded = len(D)
     cb = get_codebook(bits)
@@ -260,9 +243,19 @@ def quantize_vector(x: np.ndarray, D: np.ndarray, bits: int) -> Tuple[bytes, flo
     x_padded = np.zeros(padded, dtype=np.float32)
     x_padded[:dim] = x_hat
 
-    # Step 3: FWHT + scale by √p
-    y = fwht_forward(x_padded, D)   # values are O(1/√p)
-    y = y * math.sqrt(padded)       # now ≈ N(0,1)
+    # Rademacher only?
+    if skip_rademacher:
+        D_eff = np.ones_like(D)
+    else:
+        D_eff = D
+
+    if skip_fwht:
+        y = x_padded * D_eff
+        y = y * math.sqrt(padded)
+    else:
+        # Step 3: FWHT + scale by √p
+        y = fwht_forward(x_padded, D_eff)   # values are O(1/√p)
+        y = y * math.sqrt(padded)       # now ≈ N(0,1)
 
     # Step 4: soft-clip to ±3σ
     sigma = float(np.std(y)) + 1e-12
@@ -287,28 +280,27 @@ def quantize_vector(x: np.ndarray, D: np.ndarray, bits: int) -> Tuple[bytes, flo
     return packed, norm
 
 
-def dequantize_vector(packed: bytes, scale: float, D: np.ndarray, bits: int, dim: int) -> np.ndarray:
-    """Reconstruct float vector from packed representation.
-
-    Args:
-        packed: packed quantized bytes
-        scale:  reconstruction scale (= ||x|| returned by quantize_vector)
-        D:      Rademacher sign vector of shape (padded,)
-        bits:   quantization bits (2, 3, or 4)
-        dim:    original head_dim (before padding)
-
-    Returns:
-        float32 vector of shape (dim,)
-    """
+def dequantize_vector(packed: bytes, scale: float, D: np.ndarray, bits: int, dim: int, skip_fwht: bool = False, skip_rademacher: bool = False) -> np.ndarray:
+    """Reconstruct float vector from packed representation."""
     padded = len(D)
     cb = get_codebook(bits)
 
     # Unpack
     indices = unpack_indices(packed, padded, bits)
 
+    if skip_rademacher:
+        D_eff = np.ones_like(D)
+    else:
+        D_eff = D
+
     # cb[idx[i]] / √p → IFWHT → × scale
     y = cb[indices] / math.sqrt(padded)  # shape (padded,)
-    x_hat_padded = fwht_inverse(y, D)    # shape (padded,)
+    
+    if skip_fwht:
+        x_hat_padded = y * D_eff
+    else:
+        x_hat_padded = fwht_inverse(y, D_eff)    # shape (padded,)
+        
     x_hat = x_hat_padded[:dim]           # trim padding
 
     return (x_hat * scale).astype(np.float32)
@@ -325,6 +317,8 @@ class HeadCache:
     head_dim: int
     padded_dim: int
     D: np.ndarray        # Rademacher sign vector, shape (padded_dim,)
+    skip_fwht: bool = False
+    skip_rademacher: bool = False
 
     # Per-token storage (lists, appended as generation proceeds)
     k_packed: List[bytes] = field(default_factory=list)
@@ -342,8 +336,8 @@ class HeadCache:
 
     def append(self, k: np.ndarray, v: np.ndarray) -> None:
         """Quantize and append one token's K and V."""
-        k_bytes, k_s = quantize_vector(k.astype(np.float32), self.D, self.bits)
-        v_bytes, v_s = quantize_vector(v.astype(np.float32), self.D, self.bits)
+        k_bytes, k_s = quantize_vector(k.astype(np.float32), self.D, self.bits, self.skip_fwht, self.skip_rademacher)
+        v_bytes, v_s = quantize_vector(v.astype(np.float32), self.D, self.bits, self.skip_fwht, self.skip_rademacher)
         self.k_packed.append(k_bytes)
         self.v_packed.append(v_bytes)
         self.k_scale.append(k_s)
@@ -354,7 +348,7 @@ class HeadCache:
         out = np.zeros((self.seq_len, self.head_dim), dtype=np.float32)
         for t in range(self.seq_len):
             out[t] = dequantize_vector(
-                self.k_packed[t], self.k_scale[t], self.D, self.bits, self.head_dim
+                self.k_packed[t], self.k_scale[t], self.D, self.bits, self.head_dim, self.skip_fwht, self.skip_rademacher
             )
         return out
 
@@ -363,7 +357,7 @@ class HeadCache:
         out = np.zeros((self.seq_len, self.head_dim), dtype=np.float32)
         for t in range(self.seq_len):
             out[t] = dequantize_vector(
-                self.v_packed[t], self.v_scale[t], self.D, self.bits, self.head_dim
+                self.v_packed[t], self.v_scale[t], self.D, self.bits, self.head_dim, self.skip_fwht, self.skip_rademacher
             )
         return out
 
@@ -426,6 +420,8 @@ class PackedKVCache:
         n_layers: int,
         base_seed: int = 0xDEADBEEFCAFE,
         dense_ref: bool = False,
+        skip_fwht: bool = False,
+        skip_rademacher: bool = False,
     ):
         if bits not in (2, 3, 4):
             raise ValueError(f"bits must be 2, 3, or 4; got {bits}")
@@ -438,6 +434,8 @@ class PackedKVCache:
         self.n_kv_heads = n_kv_heads
         self.n_layers   = n_layers
         self.dense_ref  = dense_ref
+        self.skip_fwht  = skip_fwht
+        self.skip_rademacher = skip_rademacher
 
         # One HeadCache per (layer, head)
         self._caches: Dict[Tuple[int, int], HeadCache] = {}
@@ -450,6 +448,8 @@ class PackedKVCache:
                     head_dim=head_dim,
                     padded_dim=self.padded_dim,
                     D=D,
+                    skip_fwht=self.skip_fwht,
+                    skip_rademacher=self.skip_rademacher
                 )
 
         # Optional dense reference (for correctness comparison only)

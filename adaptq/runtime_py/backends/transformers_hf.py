@@ -154,10 +154,16 @@ class AdapTQCache(DynamicCache):
                 from transformers.cache_utils import DynamicLayer
                 self.layers.append(DynamicLayer())
             
+            # Compatibility with older transformers
             self.layers[layer_idx].past_key_states = k_out
             self.layers[layer_idx].past_value_states = v_out
+            
+            # Compatibility with newer transformers (CacheLayerMixin)
+            self.layers[layer_idx].keys = k_out
+            self.layers[layer_idx].values = v_out
+            self.layers[layer_idx].is_initialized = True
 
-            return self.layers[layer_idx].past_key_states, self.layers[layer_idx].past_value_states
+            return k_out, v_out
 
         except Exception as e:
             self._adaptq_error = str(e)

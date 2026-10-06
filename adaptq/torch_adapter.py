@@ -40,16 +40,18 @@ if _TORCH_AVAILABLE and _ENGINE_AVAILABLE:
             self,
             dim: int,
             heads: int,
-            bits: int = 4,
+            k_bits: int = 4,
+            v_bits: int = 4,
             capacity: int = 4096,
             seed: int = 42,
         ):
             super().__init__()
             self.dim = dim
             self.heads = heads
-            self.bits = bits
+            self.k_bits = k_bits
+            self.v_bits = v_bits
             self.engine = Engine(
-                dim=dim, heads=heads, bits=bits, capacity=capacity, seed=seed
+                dim=dim, heads=heads, k_bits=k_bits, v_bits=v_bits, capacity=capacity, seed=seed
             )
 
         def forward(
