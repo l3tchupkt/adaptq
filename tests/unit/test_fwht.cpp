@@ -137,9 +137,9 @@ TEST_CASE("next_pow2 boundary and overflow safety", "[fwht][safety]") {
     REQUIRE(next_pow2(0) == 1);
     REQUIRE(next_pow2(-10) == 1);
     REQUIRE(next_pow2(1 << 30) == (1 << 30));
-    // Verify no hang or infinite loop on values exceeding 1 << 30
-    REQUIRE(next_pow2((1 << 30) + 1) == (1 << 30));
-    REQUIRE(next_pow2(2147483647) == (1 << 30));
+    // Values above 2^30 are rejected rather than clamped to an invalid size.
+    REQUIRE_THROWS_AS(next_pow2((1 << 30) + 1), std::invalid_argument);
+    REQUIRE_THROWS_AS(next_pow2(2147483647), std::invalid_argument);
 }
 
 TEST_CASE("FWHT safety on null, empty, or out-of-bounds input", "[fwht][safety]") {
