@@ -143,3 +143,55 @@ jobs:
       - name: Benchmark (Informational)
         run: |
           python python/benchmark.py || true
+
+# ─────────────────────────────────────────────────────────────────────────
+  # Job 4: Source distribution smoke test
+  # ─────────────────────────────────────────────────────────────────────────
+  sdist-smoke:
+    name: Source distribution smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+
+      - name: Build source distribution
+        run: python -m build --sdist
+
+      - name: Extract source distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/adaptq-sdist
+          mkdir -p /tmp/adaptq-sdist
+          tar -xzf dist/adaptq-*.tar.gz -C /tmp/adaptq-sdist --strip-components=1
+
+      - name: Verify native sources are packaged
+        shell: bash
+        working-directory: /tmp/adaptq-sdist
+        run: |
+          set -euo pipefail
+          for path in include adapters core cache attention utils setup.py pyproject.toml; do
+            test -e "$path" || {
+              echo "Missing required source-distribution entry: $path"
+              exit 1
+            }
+          done
+
+      - name: Install from clean source distribution
+        working-directory: /tmp/adaptq-sdist
+        run: python -m pip install .
+
+      - name: Verify clean sdist installation
+        run: |
+          python -c "import adaptq; print('adaptq import OK')"
+          python -c "import adaptq_py; print('adaptq_py extension import OK')"
