@@ -234,7 +234,7 @@ void softmax(float *x, int n) {
     s += x[i];
   }
   if (s > 0.f && std::isfinite(s)) {
-    float inv = 1.f / s;
+    float inv = (s > 1e-12f) ? (1.f / s) : 1.f;
     for (int i = 0; i < n; ++i)
       x[i] *= inv;
   } else {
@@ -424,7 +424,7 @@ static void compute_avx2(const float *qr, float *acc, const float *k_cb, const f
     logits[j] = expf(logits[j] - mx);
     sv += logits[j];
   }
-  float inv = 1.f / sv;
+  float inv = (sv > 1e-12f) ? (1.f / sv) : 1.f;
   for (int j = 0; j < n; ++j)
     logits[j] *= inv;
 

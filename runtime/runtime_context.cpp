@@ -331,7 +331,7 @@ ComputeMetrics RuntimeContext::compute(int          layer,
     float qnorm = 0.f;
     for (int i = 0; i < cfg_.dim; ++i) qnorm += q_vec[i] * q_vec[i];
     qnorm = sqrtf(qnorm + 1e-12f);
-    float inv_qn = 1.f / qnorm;
+    float inv_qn = (qnorm > 1e-12f) ? (1.f / qnorm) : 1.f;
     for (int i = 0; i < padded; ++i) q_rot_[i] *= inv_qn;
 
     /* Apply kernel FWHT forward — needs Rademacher D from the strategy's
@@ -372,7 +372,7 @@ ComputeMetrics RuntimeContext::compute(int          layer,
         /* Softmax. */
         float sv = 0.f;
         for (int i = 0; i < n; ++i) { logits_[i] = expf(logits_[i] - mx); sv += logits_[i]; }
-        float inv_s = 1.f / sv;
+        float inv_s = (sv > 1e-12f) ? (1.f / sv) : 1.f;
         for (int i = 0; i < n; ++i) logits_[i] *= inv_s;
 
         /* V accumulation. */
