@@ -103,14 +103,18 @@ TEST_CASE("Quantizer quantize/dequantize MSE within expected bounds", "[quantize
         }
         mse_val /= 128;
         CAPTURE(bits, mse_val);
-        /* NOTE: MSE is vs the raw input x. The Quantizer applies the full HAR
-         * pipeline (L2-norm → Rademacher → FWHT → ±3σ clip → VQ), so the MSE
-         * between x and the reconstruction includes multi-stage transform error.
-         * Thresholds are set at 2× the observed values:
-         *   bits=4: ~0.076 observed  bits=3: ~0.249 observed  bits=2: ~0.714 */
-        if (bits == 4) REQUIRE(mse_val < 0.15);
-        if (bits == 3) REQUIRE(mse_val < 0.50);
-        if (bits == 2) REQUIRE(mse_val < 1.50);
+        /* NOTE (issue #229): MSE is vs the raw input x. The corrected pipeline
+         * uses symmetric Lloyd-Max N(0,1) codebooks without the erroneous
+         * [-1,1] normalisation, so reconstruction quality is improved.
+         * Thresholds below are set at 3x the analytically-expected MSE for
+         * Gaussian data at each bit width (Max 1960):
+         *   4-bit: σ² theory ~0.0120    → threshold 0.10
+         *   3-bit: σ² theory ~0.0397    → threshold 0.20
+         *   2-bit: σ² theory ~0.1175    → threshold 0.50
+         * (Actual values may differ due to the L2-normalisation + FWHT transform.) */
+        if (bits == 4) REQUIRE(mse_val < 0.10);
+        if (bits == 3) REQUIRE(mse_val < 0.20);
+        if (bits == 2) REQUIRE(mse_val < 0.50);
     }
 }
 

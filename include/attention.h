@@ -11,14 +11,15 @@ struct AttentionHead {
   KVFlatBuffer kv_buf;
   int dim;
   int padded;
-  int bits;
+  int k_bits;
+  int v_bits;
   // 0 = full; >0 = fraction of softmax mass to cover (e.g. 0.95)
   float v_mass_thresh;
   // Hybrid: if kv_buf.size < hybrid_thresh, use FP32 path (faster at small seq)
   int hybrid_thresh = 512;   // default 512, 0 = always quantized
   std::vector<float> raw_kv; // interleaved k+v, capped at hybrid_thresh tokens
 
-  void init(int d, int b, int capacity, uint64_t seed, float v_mass = 0.f,
+  void init(int d, int k_b, int v_b, int capacity, uint64_t seed, float v_mass = 0.f,
             int hyb = 512);
   void append_kv(const float *key, const float *val, int token_pos);
 

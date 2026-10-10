@@ -68,6 +68,23 @@ TEST_CASE("Centroid Exact Matching and Reconstruction", "[codebook][boundary]") 
     REQUIRE(dequantize_scalar(-1, CB4) == CB4[0]);
 }
 
+TEST_CASE("Codebook Symmetry Invariants (issue #229)", "[codebook][symmetry]") {
+    const float eps = 1e-4f;
+
+    // CB2: CB2[i] == -CB2[3-i]
+    for (int i = 0; i < 4; ++i)
+        REQUIRE(std::abs(CB2[i] + CB2[3 - i]) < eps);
+
+    // CB3: CB3[i] == -CB3[7-i]
+    for (int i = 0; i < 8; ++i)
+        REQUIRE(std::abs(CB3[i] + CB3[7 - i]) < eps);
+
+    // CB4: CB4[i] == -CB4[15-i]  (corrected in issue #229)
+    for (int i = 0; i < 16; ++i)
+        REQUIRE(std::abs(CB4[i] + CB4[15 - i]) < eps);
+}
+
+
 TEST_CASE("Extreme Outlier Values (Infinity and FLT_MAX)", "[codebook][boundary]") {
     const float pos_inf = std::numeric_limits<float>::infinity();
     const float neg_inf = -std::numeric_limits<float>::infinity();
@@ -109,10 +126,15 @@ TEST_CASE("Subnormals and Zero Values", "[codebook][boundary]") {
     REQUIRE(quantize_fast(zero_neg, 2) >= 1);
     REQUIRE(quantize_fast(zero_neg, 2) <= 2);
 
-    // In CB4, 0.0000f is centroid 7
-    REQUIRE(quantize_fast(zero_pos, 4) == 7);
-    REQUIRE(quantize_fast(zero_neg, 4) == 7);
-    REQUIRE(quantize_scalar(zero_pos, CB4, 16) == 7);
+    // In CB4 (corrected, symmetric), 0.0 is the exact midpoint between
+    // CB4[7]=-0.1258 and CB4[8]=+0.1258. It must map to index 7 or 8.
+    // (Previously CB4[7]=0.0 so index 7 was exact; that was the old, wrong codebook.)
+    int idx4 = quantize_fast(zero_pos, 4);
+    REQUIRE((idx4 == 7 || idx4 == 8));
+    int idx4s = quantize_scalar(zero_pos, CB4, 16);
+    REQUIRE((idx4s == 7 || idx4s == 8));
+    // CB3 still has exact 0 midpoint (CB3[3]=-0.2451, CB3[4]=+0.2451, midpoint=0)
+    REQUIRE((quantize_fast(zero_pos, 3) == 3 || quantize_fast(zero_pos, 3) == 4));
 
     // Subnormal numbers close to 0 map near center
     int idx_sub = quantize_fast(subnormal, 4);
@@ -144,20 +166,34 @@ TEST_CASE("NaN Handling Robustness", "[codebook][boundary]") {
     }
 }
 
-TEST_CASE("Midpoint Decision Threshold Boundaries", "[codebook][boundary]") {
-    // For 2-bit: CB2 = {-1.5104, -0.4528, 0.4528, 1.5104}
+TEST_CASE("Midpoint Decision Threshold Boundaries (corrected CB4)", "[codebook][boundary]") {
+    // For 2-bit: CB2 = {-1.5104, -0.4528, 0.4528, 1.5104}  (unchanged)
     // Midpoints: -0.9816, 0.0, 0.9816
     const float eps = 1e-4f;
-    const float t0 = (-1.5104f - 0.4528f) * 0.5f; // -0.9816
-    const float t1 = 0.0f;
-    const float t2 = (0.4528f + 1.5104f) * 0.5f;  //  0.9816
-
-    REQUIRE(quantize_fast(t0 - eps, 2) == 0);
-    REQUIRE(quantize_fast(t0 + eps, 2) == 1);
-    REQUIRE(quantize_fast(t1 - eps, 2) == 1);
-    REQUIRE(quantize_fast(t1 + eps, 2) == 2);
-    REQUIRE(quantize_fast(t2 - eps, 2) == 2);
-    REQUIRE(quantize_fast(t2 + eps, 2) == 3);
+    {
+        float t0 = (-1.5104f + -0.4528f) * 0.5f; // -0.9816
+        float t1 = 0.0f;
+        float t2 = ( 0.4528f +  1.5104f) * 0.5f; //  0.9816
+        REQUIRE(quantize_fast(t0 - eps, 2) == 0);
+        REQUIRE(quantize_fast(t0 + eps, 2) == 1);
+        REQUIRE(quantize_fast(t1 - eps, 2) == 1);
+        REQUIRE(quantize_fast(t1 + eps, 2) == 2);
+        REQUIRE(quantize_fast(t2 - eps, 2) == 2);
+        REQUIRE(quantize_fast(t2 + eps, 2) == 3);
+    }
+    // For 4-bit: CB4 corrected (issue #229), symmetric about zero.
+    // Midpoint between CB4[7]=-0.1258 and CB4[8]=+0.1258 is 0.0
+    {
+        float t7 = 0.0f;
+        REQUIRE(quantize_fast(t7 - eps, 4) == 7);
+        REQUIRE(quantize_fast(t7 + eps, 4) == 8);
+    }
+    // Midpoint between CB4[6]=-0.3795 and CB4[7]=-0.1258 is -0.2527
+    {
+        float t6 = (-0.3795f + -0.1258f) * 0.5f; // -0.2527
+        REQUIRE(quantize_fast(t6 - eps, 4) == 6);
+        REQUIRE(quantize_fast(t6 + eps, 4) == 7);
+    }
 }
 
 TEST_CASE("Fast vs Scalar Consistency Sweep Across Large Range", "[codebook][consistency]") {

@@ -169,12 +169,12 @@ Options:
 
 **Example — Full replay with metrics:**
 ```bash
-./build_v2/adapTQ_demo replay session.aqss --metrics --format md
+./build_release/adapTQ_demo replay session.aqss --metrics --format md
 ```
 
 **Example — Branch at token 256:**
 ```bash
-./build_v2/adapTQ_demo replay session.aqss --from-token 256
+./build_release/adapTQ_demo replay session.aqss --from-token 256
 ```
 
 **JSON output format:**
@@ -210,7 +210,7 @@ Options:
 
 **Example — Compare two strategies:**
 ```bash
-./build_v2/adapTQ_demo compare session.aqss \
+./build_release/adapTQ_demo compare session.aqss \
   --strategies har_fixed,fp_passthrough \
   --format md
 ```

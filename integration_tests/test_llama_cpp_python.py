@@ -24,10 +24,18 @@ pytestmark = pytest.mark.llama_cpp_python
 
 
 def test_llama_cpp_python_available():
-    """llama_cpp_python backend can be instantiated."""
-    assert backend_available("llama_cpp_python"), (
-        "llama_cpp_python backend not available — install: pip install llama-cpp-python"
-    )
+    """llama_cpp_python backend can be instantiated when installed.
+
+    Skips cleanly when llama-cpp-python is not installed.
+    This mirrors the convention used by the llama_adapter fixture in conftest.py.
+    """
+    if not backend_available("llama_cpp_python"):
+        pytest.skip(
+            "llama_cpp_python backend not available — "
+            "install: pip install llama-cpp-python"
+        )
+    # Backend IS available: assert it can be instantiated without error.
+    assert backend_available("llama_cpp_python")
 
 
 def test_load_model_metadata(llama_adapter):
