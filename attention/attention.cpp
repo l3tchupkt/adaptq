@@ -321,23 +321,36 @@ static void vaccum_scalar(float *acc, const uint8_t *vp, const float *ecb,
 }
 
 // ---------------------------------------------------------------------------
-void AttentionHead::init(int d, int b, int cap, uint64_t seed, float v_mass,
+void AttentionHead::init(int d, int k_b, int v_b, int cap, uint64_t seed, float v_mass,
                          int hyb) {
   dim = d;
-  bits = b;
+  k_bits = k_b;
+  v_bits = v_b;
   v_mass_thresh = v_mass;
   hybrid_thresh = hyb;
   quant.init(d, seed);
   padded = quant.padded;
-  kv_buf.init(cap, padded, b);
+  kv_buf.init(cap, padded, k_b, v_b);
   raw_kv.clear();
   if (hyb > 0)
     raw_kv.reserve((size_t)hyb * 2 * d);
 }
 void AttentionHead::append_kv(const float *key, const float *val, int pos) {
   static thread_local uint8_t tmp_k[8192], tmp_v[8192];
-  float ks = quant.quantize_into(key, bits, tmp_k);
-  float vs = quant.quantize_into(val, bits, tmp_v);
+  float ks = 1.0f;
+  if (k_bits == 16) {
+    memcpy(tmp_k, key, dim * sizeof(float));
+    memset(tmp_k + dim * sizeof(float), 0, (padded - dim) * sizeof(float));
+  } else {
+    ks = quant.quantize_into(key, k_bits, tmp_k);
+  }
+  float vs = 1.0f;
+  if (v_bits == 16) {
+    memcpy(tmp_v, val, dim * sizeof(float));
+    memset(tmp_v + dim * sizeof(float), 0, (padded - dim) * sizeof(float));
+  } else {
+    vs = quant.quantize_into(val, v_bits, tmp_v);
+  }
   bool will_evict = (kv_buf.size >= kv_buf.capacity);
   kv_buf.insert(tmp_k, ks, tmp_v, vs, pos);
   // Mirror raw floats for hybrid FP path (only up to threshold, before circular eviction)
@@ -357,31 +370,32 @@ void AttentionHead::append_kv(const float *key, const float *val, int pos) {
 #pragma GCC push_options
 #pragma GCC target("avx2,fma")
 #endif
-template <int BITS>
-static void compute_avx2(const float *qr, float *acc, const float *cb,
+template <int K_BITS, int V_BITS>
+static void compute_avx2(const float *qr, float *acc, const float *k_cb, const float *v_cb,
                          const uint8_t *kb, const uint8_t *vb,
                          const float *kscale, const float *vscale, float attn_s,
-                         float isp, int *slots, int n, int pb, int padded,
+                         float isp, int *slots, int n, int k_pb, int v_pb, int padded,
                          float v_mass_thresh, float *logits) {
-  const __m256 cl = _mm256_loadu_ps(cb), ch = _mm256_loadu_ps(cb + 8);
+  const __m256 k_cl = _mm256_loadu_ps(k_cb), k_ch = _mm256_loadu_ps(k_cb + 8);
+  const __m256 v_cl = _mm256_loadu_ps(v_cb), v_ch = _mm256_loadu_ps(v_cb + 8);
   float mx = -1e30f;
   int i = 0;
   for (; i + 3 < n; i += 4) {
     int s0 = slots[i], s1 = slots[i + 1], s2 = slots[i + 2], s3 = slots[i + 3];
     if (i + 7 < n) {
-      ADAPTQ_PREFETCH(kb + (size_t)slots[i + 4] * pb);
-      ADAPTQ_PREFETCH(kb + (size_t)slots[i + 5] * pb);
-      ADAPTQ_PREFETCH(kb + (size_t)slots[i + 6] * pb);
-      ADAPTQ_PREFETCH(kb + (size_t)slots[i + 7] * pb);
+      ADAPTQ_PREFETCH(kb + (size_t)slots[i + 4] * k_pb);
+      ADAPTQ_PREFETCH(kb + (size_t)slots[i + 5] * k_pb);
+      ADAPTQ_PREFETCH(kb + (size_t)slots[i + 6] * k_pb);
+      ADAPTQ_PREFETCH(kb + (size_t)slots[i + 7] * k_pb);
     }
-    ADAPTQ_PREFETCH(vb + (size_t)s0 * pb);
-    ADAPTQ_PREFETCH(vb + (size_t)s1 * pb);
-    ADAPTQ_PREFETCH(vb + (size_t)s2 * pb);
-    ADAPTQ_PREFETCH(vb + (size_t)s3 * pb);
+    ADAPTQ_PREFETCH(vb + (size_t)s0 * v_pb);
+    ADAPTQ_PREFETCH(vb + (size_t)s1 * v_pb);
+    ADAPTQ_PREFETCH(vb + (size_t)s2 * v_pb);
+    ADAPTQ_PREFETCH(vb + (size_t)s3 * v_pb);
 
     float d[4];
-    kdot4_quad<BITS>(qr, kb + (size_t)s0 * pb, kb + (size_t)s1 * pb,
-                     kb + (size_t)s2 * pb, kb + (size_t)s3 * pb, cl, ch, padded,
+    kdot4_quad<K_BITS>(qr, kb + (size_t)s0 * k_pb, kb + (size_t)s1 * k_pb,
+                     kb + (size_t)s2 * k_pb, kb + (size_t)s3 * k_pb, k_cl, k_ch, padded,
                      d);
     logits[i] = d[0] * attn_s * kscale[s0];
     if (logits[i] > mx)
@@ -398,8 +412,8 @@ static void compute_avx2(const float *qr, float *acc, const float *cb,
   }
   for (; i < n; ++i) {
     int s = slots[i];
-    ADAPTQ_PREFETCH(vb + (size_t)s * pb);
-    logits[i] = kdot1<BITS>(qr, kb + (size_t)s * pb, cl, ch, padded) * attn_s *
+    ADAPTQ_PREFETCH(vb + (size_t)s * v_pb);
+    logits[i] = kdot1<K_BITS>(qr, kb + (size_t)s * k_pb, k_cl, k_ch, padded) * attn_s *
                 kscale[s];
     if (logits[i] > mx)
       mx = logits[i];
@@ -421,16 +435,15 @@ static void compute_avx2(const float *qr, float *acc, const float *cb,
     for (; ii + 3 < n; ii += 4) {
       int s0 = slots[ii], s1 = slots[ii + 1], s2 = slots[ii + 2],
           s3 = slots[ii + 3];
-      vaccum4<BITS>(
-          acc, vb + (size_t)s0 * pb, vb + (size_t)s1 * pb, vb + (size_t)s2 * pb,
-          vb + (size_t)s3 * pb, logits[ii] * vscale[s0] * isp,
+      vaccum4<V_BITS>(
+          acc, vb + (size_t)s0 * v_pb, vb + (size_t)s1 * v_pb, vb + (size_t)s2 * v_pb,
+          vb + (size_t)s3 * v_pb, logits[ii] * vscale[s0] * isp,
           logits[ii + 1] * vscale[s1] * isp, logits[ii + 2] * vscale[s2] * isp,
-          logits[ii + 3] * vscale[s3] * isp, cl, ch, padded);
+          logits[ii + 3] * vscale[s3] * isp, v_cl, v_ch, padded);
     }
     for (; ii < n; ++ii) {
       int s = slots[ii];
-      vaccum1<BITS>(acc, vb + (size_t)s * pb, logits[ii] * vscale[s] * isp, cl,
-                    ch, padded);
+      vaccum1<V_BITS>(acc, vb + (size_t)s * v_pb, logits[ii] * vscale[s] * isp, v_cl, v_ch, padded);
     }
   } else {
     int *ord = tl_ws.ord.data();
@@ -443,11 +456,11 @@ static void compute_avx2(const float *qr, float *acc, const float *cb,
     for (; ii + 3 < n && mass < v_mass_thresh; ii += 4) {
       int i0 = ord[ii], i1 = ord[ii + 1], i2 = ord[ii + 2], i3 = ord[ii + 3];
       int s0 = slots[i0], s1 = slots[i1], s2 = slots[i2], s3 = slots[i3];
-      vaccum4<BITS>(
-          acc, vb + (size_t)s0 * pb, vb + (size_t)s1 * pb, vb + (size_t)s2 * pb,
-          vb + (size_t)s3 * pb, logits[i0] * vscale[s0] * isp,
+      vaccum4<V_BITS>(
+          acc, vb + (size_t)s0 * v_pb, vb + (size_t)s1 * v_pb, vb + (size_t)s2 * v_pb,
+          vb + (size_t)s3 * v_pb, logits[i0] * vscale[s0] * isp,
           logits[i1] * vscale[s1] * isp, logits[i2] * vscale[s2] * isp,
-          logits[i3] * vscale[s3] * isp, cl, ch, padded);
+          logits[i3] * vscale[s3] * isp, v_cl, v_ch, padded);
       mass += logits[i0] + logits[i1] + logits[i2] + logits[i3];
     }
     for (; ii < n && mass < v_mass_thresh; ++ii) {
@@ -465,7 +478,7 @@ static void compute_avx2(const float *qr, float *acc, const float *cb,
 #endif
 
 int AttentionHead::compute(const float *q, float *out) const {
-  const int n = kv_buf.size, cap = kv_buf.capacity, pb = kv_buf.packed_bytes;
+  const int n = kv_buf.size, cap = kv_buf.capacity;
   if (!n) {
     memset(out, 0, dim * sizeof(float));
     return 0;
@@ -517,30 +530,75 @@ int AttentionHead::compute(const float *q, float *out) const {
   memcpy(qr, q, dim * sizeof(float));
   for (int i = dim; i < padded; ++i)
     qr[i] = 0.f;
-  float qn = 0.f;
-  for (int i = 0; i < dim; ++i)
-    qn += q[i] * q[i];
-  qn = sqrtf(qn + 1e-12f);
-  {
-    float inv = (qn > 1e-12f) ? (1.f / qn) : 1.f;
+  
+  float attn_s = 1.f / sqrtf((float)dim);
+  float isp = 1.f / sqrtf((float)padded);
+  
+  if (k_bits != 16) {
+    float qn = 0.f;
+    for (int i = 0; i < dim; ++i)
+      qn += q[i] * q[i];
+    qn = sqrtf(qn + 1e-12f);
+    float inv = 1.f / qn;
     for (int i = 0; i < padded; ++i)
       qr[i] *= inv;
+    fwht_forward(qr, quant.D.data(), padded);
+    float sp = sqrtf((float)padded);
+    for (int i = 0; i < padded; ++i)
+      qr[i] *= sp * qn;
+    attn_s = 1.f / (sqrtf((float)dim) * (float)padded);
   }
-  fwht_forward(qr, quant.D.data(), padded);
-  float sp = sqrtf((float)padded);
-  for (int i = 0; i < padded; ++i)
-    qr[i] *= sp * qn;
 
-  const float *cb = get_codebook(bits);
+  const float *k_cb = k_bits != 16 ? get_codebook(k_bits) : nullptr;
+  const float *v_cb = v_bits != 16 ? get_codebook(v_bits) : nullptr;
+  
   float *acc = tl_ws.v_accum.data();
   const uint8_t *kb = kv_buf.k_data;
   const uint8_t *vb = kv_buf.v_data;
-  float attn_s = 1.f / (sqrtf((float)dim) * (float)padded);
-  float isp = 1.f / sqrtf((float)padded);
+  int k_pb = kv_buf.k_packed_bytes;
+  int v_pb = kv_buf.v_packed_bytes;
   float *logits = tl_ws.logits.data();
   int *slots = tl_ws.slots.data();
   for (int i = 0; i < n; ++i)
     slots[i] = (kv_buf.head - n + cap + i) % cap;
+
+  if (k_bits == 16) {
+    float mx = -1e30f;
+    for (int i = 0; i < n; ++i) {
+      int s = slots[i];
+      const float *k_fp32 = (const float*)(kb + (size_t)s * k_pb);
+      float d = dot_product(qr, k_fp32, dim);
+      logits[i] = d * attn_s;
+      if (logits[i] > mx) mx = logits[i];
+    }
+    float sv = 0.f;
+    for (int i = 0; i < n; ++i) {
+      logits[i] = expf(logits[i] - mx);
+      sv += logits[i];
+    }
+    float inv = 1.f / sv;
+    for (int i = 0; i < n; ++i) logits[i] *= inv;
+    
+    memset(acc, 0, padded * sizeof(float));
+    for (int i = 0; i < n; ++i) {
+      int s = slots[i];
+      if (v_bits == 16) {
+        const float *v_fp32 = (const float*)(vb + (size_t)s * v_pb);
+        float w = logits[i];
+        for (int j = 0; j < dim; ++j) acc[j] += w * v_fp32[j];
+      } else {
+        float ecb[16];
+        float ew = logits[i] * kv_buf.v_scale[s] * isp;
+        int cb_sz = 1 << v_bits;
+        for (int k = 0; k < cb_sz; ++k) ecb[k] = ew * v_cb[k];
+        vaccum_scalar(acc, vb + (size_t)s * v_pb, ecb, v_pb, v_bits);
+      }
+    }
+    if (v_bits != 16) fwht_inverse(acc, quant.D.data(), padded);
+    memcpy(out, acc, dim * sizeof(float));
+    return n;
+  }
+
 
 
 
@@ -551,52 +609,50 @@ int AttentionHead::compute(const float *q, float *out) const {
   use_avx2 = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
 #endif
   if (use_avx2) {
-  if (bits == 4) {
-    compute_avx2<4>(qr, acc, cb, kb, vb, kv_buf.k_scale.data(),
-                    kv_buf.v_scale.data(), attn_s, isp, slots, n, pb, padded,
-                    v_mass_thresh, logits);
-    fwht_inverse(acc, quant.D.data(), padded);
-    memcpy(out, acc, dim * sizeof(float));
-    return n;
-  } else if (bits == 3) {
-    compute_avx2<3>(qr, acc, cb, kb, vb, kv_buf.k_scale.data(),
-                    kv_buf.v_scale.data(), attn_s, isp, slots, n, pb, padded,
-                    v_mass_thresh, logits);
-    fwht_inverse(acc, quant.D.data(), padded);
-    memcpy(out, acc, dim * sizeof(float));
-    return n;
-  } else if (bits == 2) {
-    compute_avx2<2>(qr, acc, cb, kb, vb, kv_buf.k_scale.data(),
-                    kv_buf.v_scale.data(), attn_s, isp, slots, n, pb, padded,
-                    v_mass_thresh, logits);
-    fwht_inverse(acc, quant.D.data(), padded);
-    memcpy(out, acc, dim * sizeof(float));
-    return n;
-  }
+#define DISPATCH_AVX2(K_B, V_B) \
+    if (k_bits == K_B && v_bits == V_B) { \
+      compute_avx2<K_B, V_B>(qr, acc, k_cb, v_cb, kb, vb, kv_buf.k_scale.data(), \
+                      kv_buf.v_scale.data(), attn_s, isp, slots, n, k_pb, v_pb, padded, \
+                      v_mass_thresh, logits); \
+      fwht_inverse(acc, quant.D.data(), padded); \
+      memcpy(out, acc, dim * sizeof(float)); \
+      return n; \
+    }
+
+    DISPATCH_AVX2(4, 4)
+    DISPATCH_AVX2(4, 3)
+    DISPATCH_AVX2(4, 2)
+    DISPATCH_AVX2(3, 4)
+    DISPATCH_AVX2(3, 3)
+    DISPATCH_AVX2(3, 2)
+    DISPATCH_AVX2(2, 4)
+    DISPATCH_AVX2(2, 3)
+    DISPATCH_AVX2(2, 2)
+#undef DISPATCH_AVX2
   }
 #endif
 
-  // Scalar 2/3-bit path
+  // Scalar 2/3/4-bit path
   memset(acc, 0, padded * sizeof(float));
   for (int i = 0; i < n; ++i) {
     int s = slots[i];
     if (i + 4 < n) {
       int ps = slots[i + 4];
-      ADAPTQ_PREFETCH(kb + (size_t)ps * pb);
-      ADAPTQ_PREFETCH(vb + (size_t)ps * pb);
+      ADAPTQ_PREFETCH(kb + (size_t)ps * k_pb);
+      ADAPTQ_PREFETCH(vb + (size_t)ps * v_pb);
     }
-    logits[i] = kdot_scalar(qr, kb + (size_t)s * pb, cb, pb, bits) * attn_s *
+    logits[i] = kdot_scalar(qr, kb + (size_t)s * k_pb, k_cb, k_pb, k_bits) * attn_s *
                 kv_buf.k_scale[s];
   }
   softmax(logits, n);
-  int cb_sz = 1 << bits;
+  int cb_sz = 1 << v_bits;
   for (int i = 0; i < n; ++i) {
     int s = slots[i];
     float ecb[16];
     float ew = logits[i] * kv_buf.v_scale[s] * isp;
     for (int k = 0; k < cb_sz; ++k)
-      ecb[k] = ew * cb[k];
-    vaccum_scalar(acc, vb + (size_t)s * pb, ecb, pb, bits);
+      ecb[k] = ew * v_cb[k];
+    vaccum_scalar(acc, vb + (size_t)s * v_pb, ecb, v_pb, v_bits);
   }
   fwht_inverse(acc, quant.D.data(), padded);
   memcpy(out, acc, dim * sizeof(float));

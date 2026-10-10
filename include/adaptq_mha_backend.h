@@ -10,10 +10,10 @@
  * ------------------------------------------------------------------------- */
 class AdaptQMHABackend final : public IAdaptQBackend {
 public:
-  AdaptQMHABackend(int n_h, int h_dim, int bits, int capacity, uint64_t seed,
+  AdaptQMHABackend(int n_h, int h_dim, int k_bits, int v_bits, int capacity, uint64_t seed,
                    float v_mass, int hybrid_thresh)
       : _n_heads(n_h), _head_dim(h_dim) {
-    _mha = adaptq_mha_create(n_h, h_dim, bits, capacity, seed, v_mass,
+    _mha = adaptq_mha_create(n_h, h_dim, k_bits, v_bits, capacity, seed, v_mass,
                              hybrid_thresh);
   }
 

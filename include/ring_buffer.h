@@ -67,12 +67,14 @@ struct KVFlatBuffer {
 
   int capacity;
   int padded_dim;
-  int bits;
-  int packed_bytes; // (padded_dim * bits + 7) / 8
+  int k_bits;
+  int v_bits;
+  int k_packed_bytes; // (padded_dim * k_bits + 7) / 8, or padded_dim*sizeof(float) if k_bits=16
+  int v_packed_bytes; // (padded_dim * v_bits + 7) / 8, or padded_dim*sizeof(float) if v_bits=16
   int head;
   int size;
 
-  void init(int cap, int padded, int b);
+  void init(int cap, int padded, int k_b, int v_b);
   void free_aligned();
   ~KVFlatBuffer() { free_aligned(); }
 
@@ -81,14 +83,14 @@ struct KVFlatBuffer {
              float vs, int pos);
 
   const uint8_t *k_ptr(int slot) const {
-    return k_data + (size_t)slot * packed_bytes;
+    return k_data + (size_t)slot * k_packed_bytes;
   }
   const uint8_t *v_ptr(int slot) const {
-    return v_data + (size_t)slot * packed_bytes;
+    return v_data + (size_t)slot * v_packed_bytes;
   }
 
   // Bytes consumed by packed KV data only.
-  size_t kv_bytes() const { return (size_t)size * packed_bytes * 2; }
+  size_t kv_bytes() const { return (size_t)size * (k_packed_bytes + v_packed_bytes); }
   // Bytes for sequential K scan (K data region being read).
-  size_t k_scan_bytes() const { return (size_t)size * packed_bytes; }
+  size_t k_scan_bytes() const { return (size_t)size * k_packed_bytes; }
 };

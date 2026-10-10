@@ -18,13 +18,13 @@ jobs:
         run: sudo apt-get install -y cmake ninja-build libgomp1
 
       - name: Configure
-        run: cmake -B build_v2 -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build_release -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build_v2 --parallel 4
+        run: cmake --build build_release --parallel 4
 
       - name: Run unit, conformance, and security tests
-        run: cd build_v2 && ctest --output-on-failure -j4
+        run: cd build_release && ctest --output-on-failure -j4
 
   # ── Python adapter contract tests (no model needed) ────────────────────
   adapter-contract:
@@ -93,8 +93,8 @@ jobs:
 
       - name: Build C++ for Python tests
         run: |
-          cmake -B build_v2 -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build build_v2 --parallel 4
+          cmake -B build_release -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build_release --parallel 4
 
       - name: Install AdapTQ
         run: |

@@ -5,29 +5,74 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Added
-- **Ollama Streaming Generation**: Implemented `generate_streaming()` in `OllamaAdapter` using chunked NDJSON streaming via `/api/generate` with `stream: True`. Resolves issue where Ollama adapter yielded no tokens due to `decode_next()` returning `None`.
-- **Ollama Demo Streaming Flag**: Added `--stream` option to `examples/ollama_demo.py` to showcase token streaming in real-time.
-- **Unit Tests**: Added offline mock unit test suite in `tests/test_ollama_streaming.py` validating ordered fragment delivery, skipped malformed chunks, HTTP error reporting, and post-exhaustion metric capture.
-
 ---
 
-## [0.2.2] — 2026-09-14 — V2.2: Stabilization & Security Baseline
-
-### Security
-- **Snapshot Storage Validations**: Added stringent parameter and bound checks to `SessionSnapshot::load()` preventing illegal dimensions, token counts, and bit widths from causing malformed buffer allocations or buffer over-reads. 
+## [0.2.3] — 2026-10-04 — V2.3: PyPI Release Unblocker
 
 ### Fixed
-- **Max-Lloyd Codebook Boundaries (Issue #16)**: Resolved potential floating point exceptions and undefined behaviors when constructing centroids from vectors containing `NaN`s, massive infinity outliers, or pure-zero sequences.
-
-### Portability
-- **AVX2 Dynamic Dispatch (Issue #7)**: Refactored the core SIMD architecture away from global `-mavx2` flags and `#ifdef __AVX2__` guards. The engine now uses `__builtin_cpu_supports` paired with function-specific `#pragma GCC target` attributes. Binary wheels published to PyPI will now safely fall back to scalar processing on older CPUs instead of crashing with `SIGILL`.
-
-### Tests
-- **Boundary Condition Regressions**: Extended C API tests to exhaustively validate `adaptq_append` edge cases (NaNs, infinite tensors).
-- **Capability Testing**: CTest suite automatically accommodates the AVX2 capability detection framework.
+- **PyPI Release**: Bumped version to `0.2.3` to bypass PyPI's 14-day lock on modifying existing release versions, allowing the `0.2.2` stabilization and streaming fixes to be successfully published.
 
 ---
+
+## [0.2.2] — 2026-10-04 — Stabilization, Streaming & Release Hygiene
+
+### Added
+- **Ollama Streaming Generation**: Implemented `generate_streaming()` in `OllamaAdapter`
+  using chunked NDJSON streaming via `/api/generate` with `stream: True`. Resolves the
+  issue where the Ollama adapter yielded no tokens because `decode_next()` returns `None`
+  for REST-only backends.
+- **Ollama Demo Streaming Flag**: Added `--stream` option to `examples/ollama_demo.py`
+  to demonstrate real-time token streaming.
+- **Unit Tests** (`tests/test_ollama_streaming.py`): Offline mock suite validating ordered
+  fragment delivery, malformed-chunk skipping, HTTP error reporting, and post-exhaustion
+  metric capture.
+- **Integration test**: `integration_tests/test_llama_cpp_python_tracking.py` — unit
+  coverage for llama-cpp-python KV tracking without serializing llama state.
+- **`adaptq/paged_cache.py`**: `PagedKVCache` with block allocator, copy-on-write prefix
+  sharing, and sequence block-table management.
+
+### Fixed
+- **Production → research dependency**: `adaptq/runtime_py/backends/transformers_hf.py`
+  previously imported `adaptq.research.packed_kv_pt`. Fixed to import from
+  `adaptq.reference.packed_kv_pt` (production reference module).
+- **Max-Lloyd Codebook Boundaries** (Issue #16): Resolved potential floating-point
+  exceptions and undefined behaviour when constructing centroids from vectors containing
+  NaNs, infinite outliers, or pure-zero sequences.
+- **Snapshot Storage Validations**: Added bound checks to `SessionSnapshot::load()`
+  preventing illegal dimensions, token counts, and bit widths from causing malformed
+  buffer allocations.
+- **Optional-dependency test skip**: `test_llama_cpp_python_available` and
+  `test_transformers_backend_available` now skip cleanly via `pytest.skip()` when the
+  optional backend package is absent, instead of failing with `AssertionError`.
+
+### Portability
+- **AVX2 Dynamic Dispatch** (Issue #7): Refactored away from global `-mavx2` flags and
+  `#ifdef __AVX2__` guards. Uses `__builtin_cpu_supports` with function-level
+  `#pragma GCC target`. Binary wheels fall back to scalar on older CPUs instead of
+  crashing with `SIGILL`.
+
+### Documentation
+- **README**: Removed unsupported performance image, corrected API Quick Start examples
+  to match V2.1 `create_adapter()` / `ModelConfig` API.
+- **Backend accuracy**: `vllm` and `mlx` documented as stubs (planned V3); `ollama`
+  documented as REST-only (no internal KV interception).
+- **Docs**: Replaced all stale `build_v2` CLI references with `build_release` across
+  `docs/testing.md`, `docs/v2.1_integration.md`, `docs/v2_replay.md`.
+
+### CI
+- **`ci.yml`**: Pytest step now uses `-m "not gpu_required and not slow"` to reliably
+  skip GPU-only and long-running tests on standard runners.
+- **`integration.yml`**: Replaced stale `build_v2` CMake build directory with
+  `build_release` throughout.
+- **`publish.yml`**: Build step now produces both wheel and sdist (`python -m build`).
+
+### Tests (v0.2.2)
+- **pytest**: 94 collected — 84 passed, 10 skipped (optional deps), 0 failed
+- **Skips**: all `test_llama_cpp_python.*` skip when `llama-cpp-python` not installed
+- **C++ CTest**: 67/67 pass on Linux CI (not runnable natively on Windows)
+
+---
+
 
 ## [0.2.1] — 2026-07-22 — V2.1: Real Runtime Integration & Validation
 
@@ -180,5 +225,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **38/38 C++ tests** pass
 - **5/5 Python validation stages** pass
 
+[Unreleased]: https://github.com/l3tchupkt/adaptq/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/l3tchupkt/adaptq/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/l3tchupkt/adaptq/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/l3tchupkt/adaptq/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/l3tchupkt/adaptq/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/l3tchupkt/adaptq/releases/tag/v0.1.0

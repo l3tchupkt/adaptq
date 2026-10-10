@@ -2,9 +2,16 @@
 #include <cstdint>
 #include <cstddef>
 
-// Pre-computed Max-Lloyd optimal codebooks for unit-variance Gaussian distribution.
-// Entries are sorted ascending. All quantization operates on rotated vectors
-// scaled to unit variance (i.e., after FWHT + 1/sqrt(d) normalization).
+// Pre-computed Lloyd-Max minimum-MSE scalar quantizer codebooks for N(0,1).
+// Reference: J. Max, "Quantizing for minimum distortion", IRE Trans. Inf.
+// Theory, 1960; Jayant & Noll, "Digital Coding of Waveforms", 1984.
+//
+// Symmetry invariant: CB[i] == -CB[N-1-i] where N = 2^bits.
+// All entries are strictly ascending.
+// Domain: values quantized here must be approximately N(0,1) distributed.
+//
+// After FWHT + L2-normalisation + √p scaling, KV vectors are approximately
+// N(0,1) distributed. Soft-clipping to ±3σ handles rare outliers.
 
 // 2-bit codebook: 4 centroids
 extern const float CB2[4];

@@ -32,10 +32,17 @@ pytestmark = pytest.mark.transformers
 # ── 1. Backend availability ───────────────────────────────────────────────
 
 def test_transformers_backend_available():
-    """transformers backend can be instantiated without crashing."""
-    assert backend_available("transformers"), (
-        "transformers backend not available — install: pip install transformers accelerate"
-    )
+    """transformers backend can be instantiated when installed.
+
+    Skips cleanly when transformers is not installed.
+    This mirrors the convention used by the transformers_adapter fixture in conftest.py.
+    """
+    if not backend_available("transformers"):
+        pytest.skip(
+            "transformers backend not available — "
+            "install: pip install transformers accelerate"
+        )
+    assert backend_available("transformers")
 
 
 # ── 2. Model load ─────────────────────────────────────────────────────────
