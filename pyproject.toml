@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "adaptq"
-version = "0.2.2"
+version = "0.2.3"
 authors = [
   { name="Lakshmikanthan K (letchupkt)", email="letchupkt.dev@gmail.com" },
 ]
@@ -79,5 +79,6 @@ markers = [
 ]
 
 [tool.setuptools]
-packages = ["adaptq"]
 include-package-data = true
+[tool.setuptools.packages.find]
+include = ["adaptq*"]

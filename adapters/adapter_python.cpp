@@ -29,9 +29,9 @@ namespace py = pybind11;
 
 class PyMHAContext {
 public:
-  PyMHAContext(int n_heads, int head_dim, int bits, int capacity,
+  PyMHAContext(int n_heads, int head_dim, int k_bits, int v_bits, int capacity,
                uint64_t seed = 0, float v_mass = 0.95f, int hybrid_thresh = 512)
-      : _backend(n_heads, head_dim, bits, capacity, seed, v_mass,
+      : _backend(n_heads, head_dim, k_bits, v_bits, capacity, seed, v_mass,
                  hybrid_thresh),
         _head_dim(head_dim), _n_heads(n_heads) {}
 
@@ -77,8 +77,8 @@ PYBIND11_MODULE(adaptq_py, m) {
   m.doc() = "AdapTQ — Quantized KV-cache attention, Python bindings";
 
   py::class_<PyMHAContext>(m, "MHAContext")
-      .def(py::init<int, int, int, int, uint64_t, float, int>(),
-           py::arg("n_heads"), py::arg("head_dim"), py::arg("bits"),
+      .def(py::init<int, int, int, int, int, uint64_t, float, int>(),
+           py::arg("n_heads"), py::arg("head_dim"), py::arg("k_bits"), py::arg("v_bits"),
            py::arg("capacity"), py::arg("seed") = 0, py::arg("v_mass") = 0.95f,
            py::arg("hybrid_thresh") = 512)
       .def("append", &PyMHAContext::append, py::arg("head"), py::arg("key"),

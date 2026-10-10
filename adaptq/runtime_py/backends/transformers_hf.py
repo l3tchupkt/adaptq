@@ -54,46 +54,55 @@ except ImportError:
 
 class AdapTQCache(DynamicCache):
     """
-    DynamicCache subclass that feeds K/V tensors through AdapTQ
-    RuntimeContext on every update() call.
+    DynamicCache subclass that acts as the authoritative KV storage.
+    On update(), it compresses the new K/V tokens using PackedKVCache,
+    then dequantizes the full sequence and returns it to the model.
 
-    One instance per generation session. Layer index is tracked via
-    the standard DynamicCache `layer_idx` parameter.
+    This ensures the model actually performs attention using the
+    compressed representation (Issue #231).
     """
-
+    
     def __init__(
         self,
         n_layers: int,
         n_heads: int,
         head_dim: int,
-        n_kv_heads: int = 0,  # GQA: KV head count (may differ from Q heads)
+        n_kv_heads: int = 0,
         adaptq_bits: int = 4,
         adaptq_capacity: int = 4096,
+        dense_mode: bool = False,
+        use_pt_cache: bool = False,
+        device: torch.device = torch.device("cpu")
     ):
         super().__init__()
         self.n_layers    = n_layers
         self.n_heads     = n_heads
         self.head_dim    = head_dim
-        # GQA: KV heads may be fewer than Q heads (e.g. Qwen2 uses 2 KV heads vs 14 Q heads)
         self.n_kv_heads  = n_kv_heads if n_kv_heads > 0 else n_heads
         self.adaptq_bits = adaptq_bits
+        self.dense_mode  = dense_mode
+        self.use_pt_cache = use_pt_cache
+        self._adaptq_error = ""
 
-        # AdapTQ Engine (one per layer, operates on KV heads)
-        self._engines: Dict[int, "AdaptQEngine"] = {}
-        if _ADAPTQ_NATIVE_AVAILABLE:
-            for layer in range(n_layers):
-                self._engines[layer] = AdaptQEngine(
-                    dim=head_dim,
-                    heads=self.n_kv_heads,   # ← use KV head count
-                    bits=adaptq_bits,
-                    capacity=adaptq_capacity,
-                    seed=layer * 31337,
-                )
-
-        self._kv_bytes_adaptq = 0
-        self._kv_bytes_fp16   = 0
-        self._n_tokens        = 0
-        self._adaptq_error    = ""
+        if self.use_pt_cache:
+            from adaptq.reference.packed_kv_pt import PackedKVCachePT
+            self._packed_cache = PackedKVCachePT(
+                bits=adaptq_bits,
+                head_dim=head_dim,
+                n_kv_heads=self.n_kv_heads,
+                n_layers=n_layers,
+                dense_ref=dense_mode,
+                device=device
+            )
+        else:
+            from adaptq.reference.packed_kv import PackedKVCache
+            self._packed_cache = PackedKVCache(
+                bits=adaptq_bits,
+                head_dim=head_dim,
+                n_kv_heads=self.n_kv_heads,
+                n_layers=n_layers,
+                dense_ref=dense_mode,
+            )
 
     def update(
         self,
@@ -102,55 +111,81 @@ class AdapTQCache(DynamicCache):
         layer_idx: int,
         cache_kwargs=None,
     ):
-        """Intercept K/V tensors and feed them through AdapTQ."""
-        # Always call the parent to maintain the cache for the model's attention
-        # mechanism (we let the model use its own KV for correctness, and we
-        # run AdapTQ in parallel for measurement/compression tracking).
-        result = super().update(key_states, value_states, layer_idx, cache_kwargs)
+        """Intercept K/V tensors, compress them, and return the decompressed full history."""
+        if self.dense_mode:
+            return super().update(key_states, value_states, layer_idx, cache_kwargs)
 
-        # Feed into AdapTQ (if available and single batch)
-        if _ADAPTQ_NATIVE_AVAILABLE and layer_idx in self._engines:
-            try:
-                engine = self._engines[layer_idx]
-                # Shape: [1, n_heads, seq_len, head_dim] → [seq_len, n_heads, head_dim]
-                if key_states.dim() == 4 and key_states.shape[0] == 1:
-                    k = key_states[0].detach().cpu().float().contiguous()  # [n_heads, seq, head_dim]
-                    v = value_states[0].detach().cpu().float().contiguous()
+        if key_states.dim() != 4 or key_states.shape[0] != 1:
+            self._adaptq_error = "AdapTQ currently requires batch_size=1"
+            return super().update(key_states, value_states, layer_idx, cache_kwargs)
 
-                    seq_len = k.shape[1]
-                    for t in range(seq_len):
-                        # k[:, t, :] is [n_heads, head_dim] — ensure contiguous for numpy
-                        k_step = k[:, t, :].contiguous().numpy()  # [n_heads, head_dim]
-                        v_step = v[:, t, :].contiguous().numpy()
-                        engine.append(k_step, v_step)
+        device = key_states.device
+        dtype = key_states.dtype
 
-                    # Track KV byte usage
-                    self._kv_bytes_adaptq = sum(e.kv_bytes for e in self._engines.values())
-                    # FP16: n_tokens * n_kv_heads * head_dim * 2 tensors (K+V) * 2 bytes/elem
-                    self._n_tokens = engine.pos
-                    self._kv_bytes_fp16 = (
-                        self._n_tokens * self.n_layers * self.n_kv_heads * self.head_dim * 2 * 2
-                    )
-            except Exception as e:
-                # Log but don't crash — model continues with standard KV
-                self._adaptq_error = str(e)
+        try:
+            # 1. Extract new tokens
+            if hasattr(self._packed_cache, 'append_batch'):
+                k_t = key_states[0].transpose(0, 1) # [seq_len, n_kv_heads, head_dim]
+                v_t = value_states[0].transpose(0, 1)
+                self._packed_cache.append_batch(layer_idx, k_t, v_t)
+            else:
+                k_new = key_states[0].detach().cpu().float().contiguous() # [n_kv_heads, new_seq, head_dim]
+                v_new = value_states[0].detach().cpu().float().contiguous()
+    
+                seq_len = k_new.shape[1]
+                for t in range(seq_len):
+                    k_step = k_new[:, t, :].contiguous().numpy()
+                    v_step = v_new[:, t, :].contiguous().numpy()
+                    self._packed_cache.append(layer_idx, k_step, v_step)
 
-        return result
+            # 2. Retrieve decompressed full history for this layer
+            # k_out_np shape: [full_seq_len, n_kv_heads, head_dim]
+            k_out_np, v_out_np = self._packed_cache.get(layer_idx)
+
+            # 3. Convert back to torch tensor with shape [1, n_kv_heads, full_seq_len, head_dim]
+            k_out = torch.from_numpy(k_out_np).to(device=device, dtype=dtype)
+            v_out = torch.from_numpy(v_out_np).to(device=device, dtype=dtype)
+            
+            k_out = k_out.transpose(0, 1).unsqueeze(0)
+            v_out = v_out.transpose(0, 1).unsqueeze(0)
+
+            # 4. Update the standard DynamicCache lists so HF properties work
+            while len(self.layers) <= layer_idx:
+                from transformers.cache_utils import DynamicLayer
+                self.layers.append(DynamicLayer())
+            
+            # Compatibility with older transformers
+            self.layers[layer_idx].past_key_states = k_out
+            self.layers[layer_idx].past_value_states = v_out
+            
+            # Compatibility with newer transformers (CacheLayerMixin)
+            self.layers[layer_idx].keys = k_out
+            self.layers[layer_idx].values = v_out
+            self.layers[layer_idx].is_initialized = True
+
+            return k_out, v_out
+
+        except Exception as e:
+            self._adaptq_error = str(e)
+            print("ERROR IN AdapTQCache:", e)
+            return super().update(key_states, value_states, layer_idx, cache_kwargs)
 
     def kv_stats(self) -> KVStats:
+        mb = self._packed_cache.memory_bytes()
         return KVStats(
-            kv_bytes_adaptq=self._kv_bytes_adaptq,
-            kv_bytes_fp16=self._kv_bytes_fp16,
-            n_tokens_cached=self._n_tokens,
+            kv_bytes_adaptq=mb["total_bytes"],
+            kv_bytes_fp16=mb["fp16_equivalent_bytes"],
+            n_tokens_cached=self._packed_cache.sequence_length(0),
         )
 
-    def adaptq_engines(self) -> Dict[int, "AdaptQEngine"]:
-        """Access AdapTQ engines per layer (for snapshot capture)."""
-        return self._engines
+    def adaptq_engines(self):
+        """Deprecated: Returns empty dict (cache is now managed by PackedKVCache)"""
+        return {}
 
     def adaptq_error(self) -> str:
         """Return last AdapTQ interception error, or empty string."""
         return self._adaptq_error
+
 
 
 # ---------------------------------------------------------------------------

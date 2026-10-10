@@ -34,8 +34,20 @@ void Quantizer::init(int d, uint64_t seed) {
 }
 
 // ---------------------------------------------------------------------------
-// Shared inner helper: prep buffer, L2-normalise, FWHT, soft-clip (±3σ),
-// quantise, return packed indices and effective scale.
+// Shared inner helper: L2-normalise, FWHT, scale to N(0,1) domain,
+// soft-clip (±3σ), quantise. Returns packed indices and reconstruction scale.
+//
+// Pipeline (issue #229 corrected):
+//   1. L2-normalise x -> x_hat = x / ||x||    (||x_hat|| = 1)
+//   2. Zero-pad to 'padded'
+//   3. fwht_forward(x_hat_padded, D, padded)   -> (1/√p)·H·D·x_hat
+//   4. Scale by √p                             -> values ≈ N(0,1) by CLT
+//   5. Soft-clip to ±3σ  (outlier guard; does NOT modify the return scale)
+//   6. Codebook lookup in the N(0,1) domain
+//
+// Returns: ||x||  (L2 norm of original input).
+// Dequantisation: cb[idx[i]] / √p → IFWHT → multiply by returned scale.
+//
 // No heap allocs — uses thread_local scratch.
 // ---------------------------------------------------------------------------
 static inline float _quantize_core(const float *x, int dim, int padded,
@@ -43,7 +55,7 @@ static inline float _quantize_core(const float *x, int dim, int padded,
                                    uint8_t *idx_out) {
   float *buf = tl_float_buf;
 
-  // L2-normalise
+  // Step 1: copy and L2-normalise
   float norm = 0.f;
   for (int i = 0; i < dim; ++i) {
     buf[i] = x[i];
@@ -56,36 +68,36 @@ static inline float _quantize_core(const float *x, int dim, int padded,
   for (int i = 0; i < padded; ++i)
     buf[i] *= inv;
 
+  // Steps 2-3: Rademacher + FWHT → scale by √p → values ≈ N(0,1)
   fwht_forward(buf, D_vec, padded);
-
-  // ±3σ soft-clip — prevents FWHT tail-outliers from saturating codebook edges.
-  // The codebooks are empirically tuned for the Rademacher-FWHT distribution,
-  // so we preserve the distribution shape and only clip true outliers.
   float sp = sqrtf((float)padded);
+  for (int i = 0; i < padded; ++i)
+    buf[i] *= sp;
+
+  // Step 4: Soft-clip to ±3σ for outlier suppression.
+  // σ should be close to 1.0 for L2-normalised input.
+  // We clip but do NOT divide by clip — the codebooks (CB2/CB3/CB4)
+  // are designed for the N(0,1) domain, not for [-1,1].
   float sum2 = 0.f;
-  for (int i = 0; i < padded; ++i) {
-    float v = buf[i] * sp;
-    sum2 += v * v;
-  }
+  for (int i = 0; i < padded; ++i)
+    sum2 += buf[i] * buf[i];
   float sigma = sqrtf(sum2 / (float)padded + 1e-12f);
   float clip = 3.0f * sigma;
-  float inv_clip = 1.f / (clip + 1e-12f);
-
   for (int i = 0; i < padded; ++i) {
-    float v = buf[i] * sp;
-    if (v > clip)
-      v = clip;
-    if (v < -clip)
-      v = -clip;
-    buf[i] = v * inv_clip; // now in [-1, 1] matching codebook range
+    if (buf[i] >  clip) buf[i] =  clip;
+    if (buf[i] < -clip) buf[i] = -clip;
   }
+  // NOTE (issue #229): Previously we divided by clip here (inv_clip),
+  // which mapped data to [-1,1] while the codebooks expect N(0,1).
+  // This has been removed. Data stays in the N(0,1) domain.
 
-  // Quantise
+  // Step 5: Quantise in the N(0,1) domain
   for (int i = 0; i < padded; ++i)
     idx_out[i] = (uint8_t)quantize_fast(buf[i], bits);
 
-  // Effective scale that dequant must multiply by
-  return norm * clip;
+  // Return L2 norm of original input — the only reconstruction scale needed.
+  // During dequantisation: cb[idx[i]] / √p → IFWHT → multiply by norm.
+  return norm;
 }
 
 QuantizedVec Quantizer::quantize(const float *x, int bits) const {

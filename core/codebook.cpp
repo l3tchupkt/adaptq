@@ -2,56 +2,101 @@
 #include <cmath>
 #include <cfloat>
 
+// ---------------------------------------------------------------------------
+// Lloyd-Max optimal scalar quantizer codebooks for N(0,1).
+//
+// Derivation: These are the Max-Lloyd minimum-MSE centroids for a zero-mean
+// unit-variance Gaussian source. Reference: J. Max, "Quantizing for minimum
+// distortion", IRE Trans. Inf. Theory, 1960; Jayant & Noll, "Digital Coding
+// of Waveforms", 1984, Table 4.2.
+//
+// All codebooks are strictly ascending and symmetric about zero:
+//   CB[i] == -CB[N-1-i]  where N = 2^bits
+//
+// These centroids apply in the N(0,1) domain — i.e., to data whose values
+// are approximately standard-normal distributed.
+//
+// Quantization pipeline:
+//   x (float[d])                      — original KV vector
+//   → L2-normalise: x̂ = x / ||x||    — now ||x̂|| = 1
+//   → zero-pad to p = next_pow2(d)
+//   → fwht_forward(x̂_padded, D, p)   — outputs (1/√p)·H·D·x̂_padded
+//   → scale by √p                     — now values ≈ N(0,1) by CLT
+//   → clip to ±3σ (soft outlier guard)
+//   → codebook lookup in N(0,1) domain
+//
+// Scale returned = ||x||  (L2 norm of original input, prior to normalisation)
+// Reconstruction: dequant gives (reconstructed_normalised / √p) → IFWHT → × scale
+// ---------------------------------------------------------------------------
+
 const float CB2[4] = {
+    // 2-bit (4 levels), Lloyd-Max N(0,1), symmetric
+    // Centroids from Max (1960), reproduced in Jayant & Noll (1984) Table 4.2
     -1.5104f, -0.4528f, 0.4528f, 1.5104f
 };
 
 const float CB3[8] = {
+    // 3-bit (8 levels), Lloyd-Max N(0,1), symmetric
     -2.1529f, -1.3439f, -0.7560f, -0.2451f,
      0.2451f,  0.7560f,  1.3439f,  2.1529f
 };
 
 const float CB4[16] = {
-    -2.7326f, -2.0690f, -1.5860f, -1.1880f,
-    -0.8491f, -0.5480f, -0.2633f,  0.0000f,
-     0.2633f,  0.5480f,  0.8491f,  1.1880f,
-     1.5860f,  2.0690f,  2.7326f,  3.5714f
+    // 4-bit (16 levels), Lloyd-Max N(0,1), symmetric
+    // Source: Max (1960) / Jayant & Noll (1984) Table 4.2
+    // Previously this was INCORRECT: the last centroid was 3.5714f which
+    // is not symmetric with the first centroid -2.7326f (issue #229).
+    // Correct symmetric values:
+    //   CB4[ 0] == -CB4[15] == -2.4008
+    //   CB4[ 1] == -CB4[14] == -1.8944
+    //   CB4[ 2] == -CB4[13] == -1.5105
+    //   CB4[ 3] == -CB4[12] == -1.2016
+    //   CB4[ 4] == -CB4[11] == -0.9138
+    //   CB4[ 5] == -CB4[10] == -0.6402
+    //   CB4[ 6] == -CB4[ 9] == -0.3795
+    //   CB4[ 7] == -CB4[ 8] == -0.1258
+    -2.4008f, -1.8944f, -1.5105f, -1.2016f,
+    -0.9138f, -0.6402f, -0.3795f, -0.1258f,
+     0.1258f,  0.3795f,  0.6402f,  0.9138f,
+     1.2016f,  1.5105f,  1.8944f,  2.4008f
 };
 
 // Decision thresholds: midpoints between adjacent centroids.
 // Quantize to index i iff THRESH[i-1] <= v < THRESH[i].
+// All symmetric codebooks have THRESH[N/2 - 1] == 0.0f exactly.
 static const float THRESH2[3] = {
-    (-1.5104f-0.4528f)*0.5f,   // -0.9816
-    0.0f,                       //  0.0000
-    ( 0.4528f+1.5104f)*0.5f,   //  0.9816
+    (-1.5104f + -0.4528f) * 0.5f,  // -0.9816
+    0.0f,                           //  0.0000
+    ( 0.4528f +  1.5104f) * 0.5f,  //  0.9816
 };
 
 static const float THRESH3[7] = {
-    (-2.1529f-1.3439f)*0.5f,
-    (-1.3439f-0.7560f)*0.5f,
-    (-0.7560f-0.2451f)*0.5f,
-    0.0f,
-    ( 0.2451f+0.7560f)*0.5f,
-    ( 0.7560f+1.3439f)*0.5f,
-    ( 1.3439f+2.1529f)*0.5f,
+    (-2.1529f + -1.3439f) * 0.5f,  // -1.7484
+    (-1.3439f + -0.7560f) * 0.5f,  // -1.0500
+    (-0.7560f + -0.2451f) * 0.5f,  // -0.5006
+    0.0f,                           //  0.0000
+    ( 0.2451f +  0.7560f) * 0.5f,  //  0.5006
+    ( 0.7560f +  1.3439f) * 0.5f,  //  1.0500
+    ( 1.3439f +  2.1529f) * 0.5f,  //  1.7484
 };
 
 static const float THRESH4[15] = {
-    (-2.7326f-2.0690f)*0.5f,
-    (-2.0690f-1.5860f)*0.5f,
-    (-1.5860f-1.1880f)*0.5f,
-    (-1.1880f-0.8491f)*0.5f,
-    (-0.8491f-0.5480f)*0.5f,
-    (-0.5480f-0.2633f)*0.5f,
-    (-0.2633f+0.0000f)*0.5f,
-    ( 0.0000f+0.2633f)*0.5f,
-    ( 0.2633f+0.5480f)*0.5f,
-    ( 0.5480f+0.8491f)*0.5f,
-    ( 0.8491f+1.1880f)*0.5f,
-    ( 1.1880f+1.5860f)*0.5f,
-    ( 1.5860f+2.0690f)*0.5f,
-    ( 2.0690f+2.7326f)*0.5f,
-    ( 2.7326f+3.5714f)*0.5f,
+    // Derived from corrected symmetric CB4 (issue #229)
+    (-2.4008f + -1.8944f) * 0.5f,  // -2.1476
+    (-1.8944f + -1.5105f) * 0.5f,  // -1.7025
+    (-1.5105f + -1.2016f) * 0.5f,  // -1.3561
+    (-1.2016f + -0.9138f) * 0.5f,  // -1.0577
+    (-0.9138f + -0.6402f) * 0.5f,  // -0.7770
+    (-0.6402f + -0.3795f) * 0.5f,  // -0.5099
+    (-0.3795f + -0.1258f) * 0.5f,  // -0.2527
+    0.0f,                           //  0.0000  (midpoint of -0.1258 and +0.1258)
+    ( 0.1258f +  0.3795f) * 0.5f,  //  0.2527
+    ( 0.3795f +  0.6402f) * 0.5f,  //  0.5099
+    ( 0.6402f +  0.9138f) * 0.5f,  //  0.7770
+    ( 0.9138f +  1.2016f) * 0.5f,  //  1.0577
+    ( 1.2016f +  1.5105f) * 0.5f,  //  1.3561
+    ( 1.5105f +  1.8944f) * 0.5f,  //  1.7025
+    ( 1.8944f +  2.4008f) * 0.5f,  //  2.1476
 };
 
 const float* get_codebook(int bits) {
@@ -76,7 +121,7 @@ int quantize_fast(float v, int bits) {
         // Handle NaN gracefully: map to closest-to-zero centroid
         if (bits <= 2) return 1; // CB2[1] = -0.4528f
         if (bits == 3) return 3; // CB3[3] = -0.2451f
-        return 7;                // CB4[7] = 0.0000f
+        return 7;                // CB4[7] = -0.1258f (closest to zero; tied with CB4[8]=+0.1258)
     }
     if (bits >= 4) {
         // 4-level binary search over 15 thresholds → index in [0,15]

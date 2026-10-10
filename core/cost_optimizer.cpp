@@ -95,11 +95,7 @@ public:
     bool should_reselect(float current_cost, float threshold = 0.20f) const {
         const Observation *best = selected_observation();
         if (!best) return false;
-        float denom = best->cost;
-    if (std::abs(denom) < 1e-12f) {
-        denom = (denom < 0.0f) ? -1e-12f : 1e-12f;
-    }
-    float relative_increase = (current_cost - best->cost) / denom;
+        float relative_increase = (current_cost - best->cost) / (best->cost + 1e-12f);
         return relative_increase > threshold;
     }
 
