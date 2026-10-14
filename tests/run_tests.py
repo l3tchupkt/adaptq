@@ -41,6 +41,10 @@ _bc = os.path.join(ADAPTQ_DIR, "build_clean")
 _b = os.path.join(ADAPTQ_DIR, "build")
 BUILD_DIR = _b if os.path.exists(_b) else (_bc if os.path.exists(_bc) else _br)
 
+# Set from --python-only in main(). When False (default) a missing native
+# library is a hard failure, not a silent skip.
+PYTHON_ONLY = False
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Utilities
 # ═══════════════════════════════════════════════════════════════════════════
@@ -483,8 +487,12 @@ print(f"SUMMARY {passed}/{passed+failed}")
     print(out.rstrip())
 
     if "SKIP:" in out:
-        print(f"  {INFO} libadaptq.so not found; skipping ctypes integration tests")
-        return True
+        if PYTHON_ONLY:
+            print(f"  {INFO} libadaptq.so not found; skipping ctypes integration tests (python-only mode)")
+            return True
+        print("  [ FAIL ]  Native library required for stage 4 is missing (expected libadaptq build artifact)")
+        print(f"  {INFO} Re-run with --python-only to explicitly skip native stages")
+        return False
 
     all_pass = "FAIL" not in out and "SUMMARY" in out
     for line in out.splitlines():
@@ -595,8 +603,12 @@ print(f"XVAL {'PASS' if all_pass else 'FAIL'}")
             os.unlink(tmp)
 
     if "SKIP" in out:
-        print(f"  {INFO} libadaptq not found — skipping cross-validation.")
-        return True
+        if PYTHON_ONLY:
+            print(f"  {INFO} libadaptq not found, skipping cross-validation (python-only mode).")
+            return True
+        print("  [ FAIL ]  Native library required for stage 5 is missing (expected libadaptq build artifact)")
+        print(f"  {INFO} Re-run with --python-only to explicitly skip native stages")
+        return False
 
     print(out.rstrip())
     all_ok = "XVAL PASS" in out
@@ -609,10 +621,14 @@ print(f"XVAL {'PASS' if all_pass else 'FAIL'}")
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
+    global PYTHON_ONLY
     parser = argparse.ArgumentParser()
     parser.add_argument("--stage", type=int, default=0,
                         help="Run only this stage (1-5); 0=all")
+    parser.add_argument("--python-only", action="store_true",
+                        help="Allow native stages to skip when the built library is missing")
     args = parser.parse_args()
+    PYTHON_ONLY = args.python_only
 
     print("=" * 62)
     print("  AdapTQ V1 -- Full Validation Suite")
