@@ -70,11 +70,16 @@ target_include_directories(adapTQ_avx2_obj PRIVATE
 )
 # -mavx2/-mfma are x86-only; on other targets kdot_avx2.cpp compiles its
 # !__AVX2__ branch and the selector falls back to the scalar backend.
+set(ADAPTQ_AVX2_BACKEND_COMPILED 0)
 if(MSVC)
   target_compile_options(adapTQ_avx2_obj PRIVATE /arch:AVX2)
+  set(ADAPTQ_AVX2_BACKEND_COMPILED 1)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i[3-6]86|x86)$")
   target_compile_options(adapTQ_avx2_obj PRIVATE -mavx2 -mfma)
+  set(ADAPTQ_AVX2_BACKEND_COMPILED 1)
 endif()
+target_compile_definitions(adapTQ_core_obj PRIVATE
+  ADAPTQ_AVX2_BACKEND_COMPILED=${ADAPTQ_AVX2_BACKEND_COMPILED})
 set_target_properties(adapTQ_avx2_obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(adapTQ_avx2 STATIC $<TARGET_OBJECTS:adapTQ_avx2_obj>)
