@@ -1,5 +1,6 @@
 #include "../include/attention.h"
 #include "../include/codebook.h"
+#include "sparse_selection.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -447,13 +448,12 @@ static void compute_avx2(const float *qr, float *acc, const float *k_cb, const f
     }
   } else {
     int *ord = tl_ws.ord.data();
-    for (int ii = 0; ii < n; ++ii)
-      ord[ii] = ii;
-    std::sort(ord, ord + n,
-              [&](int a, int b) { return logits[a] > logits[b]; });
+    const int selected_count =
+        select_top_mass_indices(logits, n, v_mass_thresh, ord);
+
     float mass = 0.f;
     int ii = 0;
-    for (; ii + 3 < n && mass < v_mass_thresh; ii += 4) {
+    for (; ii + 3 < selected_count && mass < v_mass_thresh; ii += 4) {
       int i0 = ord[ii], i1 = ord[ii + 1], i2 = ord[ii + 2], i3 = ord[ii + 3];
       int s0 = slots[i0], s1 = slots[i1], s2 = slots[i2], s3 = slots[i3];
       vaccum4<V_BITS>(
@@ -463,7 +463,7 @@ static void compute_avx2(const float *qr, float *acc, const float *k_cb, const f
           logits[i3] * vscale[s3] * isp, v_cl, v_ch, padded);
       mass += logits[i0] + logits[i1] + logits[i2] + logits[i3];
     }
-    for (; ii < n && mass < v_mass_thresh; ++ii) {
+    for (; ii < selected_count && mass < v_mass_thresh; ++ii) {
       int s = slots[ord[ii]];
       float w = logits[ord[ii]];
       vaccum1<BITS>(acc, vb + (size_t)s * pb, w * vscale[s] * isp, cl, ch,
