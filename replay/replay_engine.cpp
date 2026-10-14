@@ -52,6 +52,7 @@ static void validate_token_log(const SessionSnapshot &snap) {
             std::to_string(log.size()) + ")");
     }
 
+    size_t stride = static_cast<size_t>(n_layers) * static_cast<size_t>(n_heads);
     for (size_t i = 0; i < log.size(); ++i) {
         const SnapshotTokenEntry &entry = log[i];
         if (entry.layer < 0 || entry.layer >= n_layers ||
@@ -60,6 +61,15 @@ static void validate_token_log(const SessionSnapshot &snap) {
             entry.v_fp32.size() != static_cast<size_t>(dim)) {
             throw std::runtime_error(
                 "ReplayEngine: invalid token log entry at index " +
+                std::to_string(i));
+        }
+        size_t pos_in_token = (stride == 0) ? 0 : (i % stride);
+        size_t exp_layer = (n_heads == 0) ? 0 : (pos_in_token / static_cast<size_t>(n_heads));
+        size_t exp_head = (n_heads == 0) ? 0 : (pos_in_token % static_cast<size_t>(n_heads));
+        if (static_cast<size_t>(entry.layer) != exp_layer ||
+            static_cast<size_t>(entry.head) != exp_head) {
+            throw std::runtime_error(
+                "ReplayEngine: token log ordering mismatch at index " +
                 std::to_string(i));
         }
     }
