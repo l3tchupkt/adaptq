@@ -50,7 +50,11 @@ public:
 
     const char *name() const override { return "mmap"; }
 
-    int capacity() const override { return capacity_; }
+    int capacity() const { return capacity_; }
+
+    size_t bytes_capacity() const override {
+        return (size_t)capacity_ * (size_t)max_slot_bytes_;
+    }
 
     size_t bytes_used() const override {
         return (size_t)size_ * (size_t)max_slot_bytes_;
