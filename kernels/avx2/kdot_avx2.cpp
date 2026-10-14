@@ -142,19 +142,21 @@ static void vaccum4_avx2(float *__restrict acc,
     int b = 0;
     for (int j = 0; j < padded; j += 16) {
         __m256 ra = _mm256_loadu_ps(acc + j);
-        ra = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v0+b), cl, ch), q0, ra);
-        ra = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v1+b), cl, ch), q1, ra);
-        ra = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v2+b), cl, ch), q2, ra);
-        ra = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v3+b), cl, ch), q3, ra);
-        _mm256_storeu_ps(acc + j, ra);
-        b += Decode<BITS>::step;
         __m256 rb = _mm256_loadu_ps(acc + j + 8);
-        rb = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v0+b), cl, ch), q0, rb);
-        rb = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v1+b), cl, ch), q1, rb);
-        rb = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v2+b), cl, ch), q2, rb);
-        rb = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v3+b), cl, ch), q3, rb);
+        const int hi = b + Decode<BITS>::step;
+
+        ra = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v0 + b), cl, ch), q0, ra);
+        rb = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v0 + hi), cl, ch), q0, rb);
+        ra = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v1 + b), cl, ch), q1, ra);
+        rb = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v1 + hi), cl, ch), q1, rb);
+        ra = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v2 + b), cl, ch), q2, ra);
+        rb = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v2 + hi), cl, ch), q2, rb);
+        ra = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v3 + b), cl, ch), q3, ra);
+        rb = _mm256_fmadd_ps(lup8(Decode<BITS>::f(v3 + hi), cl, ch), q3, rb);
+
+        _mm256_storeu_ps(acc + j, ra);
         _mm256_storeu_ps(acc + j + 8, rb);
-        b += Decode<BITS>::step;
+        b += 2 * Decode<BITS>::step;
     }
 }
 
