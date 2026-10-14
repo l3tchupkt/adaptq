@@ -71,6 +71,71 @@ template<> struct Decode<2> {
     }
 };
 
+/* ---- Scalar fallback for sub-16 padded dims --------------------------- */
+static inline void unpack_idx_scalar(const uint8_t *src, int padded, int bits, uint8_t *idx) {
+    if (bits == 4) {
+        int n = padded >> 1;
+        for (int i = 0; i < n; ++i) {
+            idx[i * 2] = src[i] >> 4;
+            idx[i * 2 + 1] = src[i] & 0xF;
+        }
+        if (padded & 1) idx[n * 2] = src[n] >> 4;
+    } else if (bits == 2) {
+        int n = padded >> 2;
+        for (int i = 0; i < n; ++i) {
+            idx[i * 4] = (src[i] >> 6) & 3;
+            idx[i * 4 + 1] = (src[i] >> 4) & 3;
+            idx[i * 4 + 2] = (src[i] >> 2) & 3;
+            idx[i * 4 + 3] = src[i] & 3;
+        }
+        int r = padded & 3;
+        for (int k = 0; k < r; ++k) idx[n * 4 + k] = (src[n] >> (6 - 2 * k)) & 3;
+    } else {
+        int g = padded / 8;
+        for (int i = 0; i < g; ++i) {
+            const uint8_t *p = src + i * 3;
+            uint8_t *s = idx + i * 8;
+            s[0] = (p[0] >> 5) & 7; s[1] = (p[0] >> 2) & 7;
+            s[2] = ((p[0] & 3) << 1) | (p[1] >> 7); s[3] = (p[1] >> 4) & 7;
+            s[4] = (p[1] >> 1) & 7; s[5] = ((p[1] & 1) << 2) | (p[2] >> 6);
+            s[6] = (p[2] >> 3) & 7; s[7] = p[2] & 7;
+        }
+        int r = padded % 8;
+        if (r) {
+            const uint8_t *p = src + g * 3;
+            uint8_t *s = idx + g * 8;
+            int bit = 0;
+            uint8_t cur = p[0];
+            int in = 0;
+            for (int i = 0; i < r; ++i) {
+                uint8_t v = 0;
+                for (int b = 0; b < 3; ++b) {
+                    if (bit == 8) { cur = p[++in]; bit = 0; }
+                    v = (uint8_t)((v << 1) | ((cur >> (7 - bit)) & 1));
+                    ++bit;
+                }
+                s[i] = v;
+            }
+        }
+    }
+}
+
+static inline float kdot_scalar_fallback(const float *q_rot, const uint8_t *pk,
+                                         const float *cb, int padded, int bits) {
+    uint8_t idx[16];
+    unpack_idx_scalar(pk, padded, bits, idx);
+    float s = 0.f;
+    for (int j = 0; j < padded; ++j) s += q_rot[j] * cb[idx[j]];
+    return s;
+}
+
+static inline void vaccum_scalar_fallback(float *acc, const uint8_t *vp, float ew,
+                                           const float *cb, int padded, int bits) {
+    uint8_t idx[16];
+    unpack_idx_scalar(vp, padded, bits, idx);
+    for (int j = 0; j < padded; ++j) acc[j] += ew * cb[idx[j]];
+}
+
 /* ---- Single-token K-dot ----------------------------------------------- */
 template<int BITS>
 static float kdot1_avx2(const float    *__restrict qr,
@@ -178,6 +243,13 @@ public:
                     int N, int padded, int bits,
                     float *logits_out) override {
         const float *cb = get_codebook(bits);
+        if (padded < 16) {
+            for (int i = 0; i < N; ++i) {
+                float d = kdot_scalar_fallback(q_rot, kr[i].data, cb, padded, bits);
+                logits_out[i] = d * kr[i].scale / (float)padded;
+            }
+            return;
+        }
         __m256 cl = _mm256_loadu_ps(cb), ch = _mm256_loadu_ps(cb + 8);
         int i = 0;
         for (; i + 3 < N; i += 4) {
@@ -206,8 +278,15 @@ public:
                       const float          *weights,
                       int N, int padded, int bits) override {
         const float *cb = get_codebook(bits);
-        __m256 cl = _mm256_loadu_ps(cb), ch = _mm256_loadu_ps(cb + 8);
         memset(acc, 0, (size_t)padded * sizeof(float));
+        if (padded < 16) {
+            for (int i = 0; i < N; ++i) {
+                float ew = weights[i] * vr[i].scale;
+                vaccum_scalar_fallback(acc, vr[i].data, ew, cb, padded, bits);
+            }
+            return;
+        }
+        __m256 cl = _mm256_loadu_ps(cb), ch = _mm256_loadu_ps(cb + 8);
         int i = 0;
         for (; i + 3 < N; i += 4) {
             float e0 = weights[i]   * vr[i].scale;
