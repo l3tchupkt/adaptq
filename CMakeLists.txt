@@ -62,18 +62,17 @@ endif()
 
 # ---------------------------------------------------------------------------
 # AVX2 kernel backend
-# ---------------------------------------------------------------------------
+set(ADAPTQ_HAS_AVX2_BACKEND OFF)
 add_library(adapTQ_avx2_obj OBJECT kernels/avx2/kdot_avx2.cpp)
-target_include_directories(adapTQ_avx2_obj PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/kernels
-)
-# -mavx2/-mfma are x86-only; on other targets kdot_avx2.cpp compiles its
-# !__AVX2__ branch and the selector falls back to the scalar backend.
 if(MSVC)
   target_compile_options(adapTQ_avx2_obj PRIVATE /arch:AVX2)
+  set(ADAPTQ_HAS_AVX2_BACKEND ON)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i[3-6]86|x86)$")
   target_compile_options(adapTQ_avx2_obj PRIVATE -mavx2 -mfma)
+  set(ADAPTQ_HAS_AVX2_BACKEND ON)
+endif()
+if(ADAPTQ_HAS_AVX2_BACKEND)
+  target_compile_definitions(adapTQ_core_obj PRIVATE ADAPTQ_HAS_AVX2_BACKEND=1)
 endif()
 set_target_properties(adapTQ_avx2_obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
@@ -210,6 +209,9 @@ if(ADAPTQ_BUILD_TESTS)
   add_executable(test_api
       tests/unit/test_api.cpp)
   target_link_libraries(test_api PRIVATE adapTQ_core Catch2::Catch2WithMain)
+if(ADAPTQ_HAS_AVX2_BACKEND)
+  target_compile_definitions(test_api PRIVATE ADAPTQ_HAS_AVX2_BACKEND=1)
+endif()
   catch_discover_tests(test_api)
 
   # --- test_conformance ----------------------------------------------------
