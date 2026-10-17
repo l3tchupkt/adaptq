@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include "../../include/fwht.h"
+#include "../../include/adaptq/kernel.h"
 #include <cmath>
 #include <cstring>
 #include <random>
@@ -162,3 +163,61 @@ TEST_CASE("FWHT safety on null, empty, or out-of-bounds input", "[fwht][safety]"
     REQUIRE_THROWS_AS(fwht_forward(big_x.data(), big_D.data(), 1025), std::invalid_argument);
     REQUIRE_THROWS_AS(fwht_inverse(big_x.data(), big_D.data(), 1025), std::invalid_argument);
 }
+
+namespace adaptq {
+IKernelBackend *create_avx2_backend();
+}
+
+TEST_CASE("AVX2 FWHT matches scalar reference across multiple transform sizes (Issue #154)", "[fwht][avx2][issue-154]") {
+    auto *backend = adaptq::create_avx2_backend();
+    if (!backend || !backend->is_available()) {
+        SUCCEED("AVX2 backend not available in this build/environment");
+        return;
+    }
+
+    for (int dim : {16, 32, 64, 128, 256, 512}) {
+        int padded = next_pow2(dim);
+        std::vector<int8_t> D(padded);
+        gen_rademacher(D.data(), padded, 0x154ULL + (uint64_t)dim);
+
+        auto orig = random_vec(padded, 42ULL + (uint64_t)dim);
+
+        // 1. Forward comparison
+        std::vector<float> x_scalar = orig;
+        std::vector<float> x_avx2 = orig;
+        fwht_forward(x_scalar.data(), D.data(), padded);
+        backend->fwht_forward(x_avx2.data(), D.data(), padded);
+
+        double err_fwd = mse(x_scalar.data(), x_avx2.data(), padded);
+        CAPTURE(dim, err_fwd);
+        REQUIRE(err_fwd < 1e-10);
+
+        // 2. Inverse comparison
+        std::vector<float> inv_scalar = x_scalar;
+        std::vector<float> inv_avx2 = x_avx2;
+        fwht_inverse(inv_scalar.data(), D.data(), padded);
+        backend->fwht_inverse(inv_avx2.data(), D.data(), padded);
+
+        double err_inv = mse(inv_scalar.data(), inv_avx2.data(), padded);
+        CAPTURE(dim, err_inv);
+        REQUIRE(err_inv < 1e-10);
+
+        // 3. AVX2 roundtrip
+        double err_roundtrip = mse(inv_avx2.data(), orig.data(), padded);
+        CAPTURE(dim, err_roundtrip);
+        REQUIRE(err_roundtrip < 1e-10);
+    }
+
+    // Safety checks
+    float buf[16] = {};
+    int8_t D[16] = {};
+    backend->fwht_forward(nullptr, D, 16);
+    backend->fwht_forward(buf, nullptr, 16);
+    backend->fwht_forward(buf, D, 0);
+    backend->fwht_forward(buf, D, -8);
+    backend->fwht_inverse(nullptr, D, 16);
+    backend->fwht_inverse(buf, nullptr, 16);
+    backend->fwht_inverse(buf, D, 0);
+    backend->fwht_inverse(buf, D, -8);
+}
+

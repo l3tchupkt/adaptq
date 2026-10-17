@@ -158,6 +158,94 @@ static void vaccum4_avx2(float *__restrict acc,
     }
 }
 
+/* ---- AVX2-vectorized FWHT forward and inverse ------------------------- */
+
+static void fwht_forward_avx2(float *x, const int8_t *D, int p) {
+    /* 1. Rademacher signs */
+    for (int i = 0; i < p; i += 8) {
+        int64_t d_val;
+        std::memcpy(&d_val, D + i, sizeof(d_val));
+        __m128i d8 = _mm_cvtsi64_si128(d_val);
+        __m256  df = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(d8));
+        __m256  vx = _mm256_loadu_ps(x + i);
+        _mm256_storeu_ps(x + i, _mm256_mul_ps(vx, df));
+    }
+
+    /* 2. Butterfly passes for len = 1, 2, 4 */
+    for (int len = 1; len < 8 && len < p; len <<= 1) {
+        for (int i = 0; i < p; i += len << 1) {
+            float *lo = x + i;
+            float *hi = x + i + len;
+            for (int j = 0; j < len; ++j) {
+                float a = lo[j], b = hi[j];
+                lo[j] = a + b;
+                hi[j] = a - b;
+            }
+        }
+    }
+
+    /* 3. Butterfly passes for len >= 8 (vectorized 8 floats per step) */
+    for (int len = 8; len < p; len <<= 1) {
+        for (int i = 0; i < p; i += len << 1) {
+            float *lo = x + i;
+            float *hi = x + i + len;
+            for (int j = 0; j < len; j += 8) {
+                __m256 alo = _mm256_loadu_ps(lo + j);
+                __m256 ahi = _mm256_loadu_ps(hi + j);
+                _mm256_storeu_ps(lo + j, _mm256_add_ps(alo, ahi));
+                _mm256_storeu_ps(hi + j, _mm256_sub_ps(alo, ahi));
+            }
+        }
+    }
+
+    /* 4. Normalization by 1/sqrt(p) */
+    __m256 vinv = _mm256_set1_ps(1.0f / std::sqrt((float)p));
+    for (int i = 0; i < p; i += 8) {
+        __m256 v = _mm256_loadu_ps(x + i);
+        _mm256_storeu_ps(x + i, _mm256_mul_ps(v, vinv));
+    }
+}
+
+static void fwht_inverse_avx2(float *x, const int8_t *D, int p) {
+    /* 1. Butterfly passes for len = 1, 2, 4 */
+    for (int len = 1; len < 8 && len < p; len <<= 1) {
+        for (int i = 0; i < p; i += len << 1) {
+            float *lo = x + i;
+            float *hi = x + i + len;
+            for (int j = 0; j < len; ++j) {
+                float a = lo[j], b = hi[j];
+                lo[j] = a + b;
+                hi[j] = a - b;
+            }
+        }
+    }
+
+    /* 2. Butterfly passes for len >= 8 (vectorized 8 floats per step) */
+    for (int len = 8; len < p; len <<= 1) {
+        for (int i = 0; i < p; i += len << 1) {
+            float *lo = x + i;
+            float *hi = x + i + len;
+            for (int j = 0; j < len; j += 8) {
+                __m256 alo = _mm256_loadu_ps(lo + j);
+                __m256 ahi = _mm256_loadu_ps(hi + j);
+                _mm256_storeu_ps(lo + j, _mm256_add_ps(alo, ahi));
+                _mm256_storeu_ps(hi + j, _mm256_sub_ps(alo, ahi));
+            }
+        }
+    }
+
+    /* 3. Multiply by D * (1/sqrt(p)) */
+    __m256 vinv = _mm256_set1_ps(1.0f / std::sqrt((float)p));
+    for (int i = 0; i < p; i += 8) {
+        int64_t d_val;
+        std::memcpy(&d_val, D + i, sizeof(d_val));
+        __m128i d8 = _mm_cvtsi64_si128(d_val);
+        __m256  df = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(d8));
+        __m256  v  = _mm256_loadu_ps(x + i);
+        _mm256_storeu_ps(x + i, _mm256_mul_ps(v, _mm256_mul_ps(vinv, df)));
+    }
+}
+
 namespace adaptq {
 
 /* =========================================================================
@@ -166,10 +254,21 @@ namespace adaptq {
 class AVX2KernelBackend final : public IKernelBackend {
 public:
     void fwht_forward(float *x, const int8_t *D, int p) override {
-        ::fwht_forward(x, D, p);
+        if (!x || !D || p <= 0) return;
+        if (p < 8 || (p & (p - 1)) != 0) {
+            ::fwht_forward(x, D, p);
+            return;
+        }
+        fwht_forward_avx2(x, D, p);
     }
+
     void fwht_inverse(float *x, const int8_t *D, int p) override {
-        ::fwht_inverse(x, D, p);
+        if (!x || !D || p <= 0) return;
+        if (p < 8 || (p & (p - 1)) != 0) {
+            ::fwht_inverse(x, D, p);
+            return;
+        }
+        fwht_inverse_avx2(x, D, p);
     }
 
     /* K-dot: 4-token batches via kdot4_quad, scalar tail via kdot1 */
