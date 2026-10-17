@@ -109,6 +109,44 @@ out = layer(q, k, v)        # (1, 4, 64)
 
 **Constraints:** CPU only; batch size must be 1.
 
+### Runtime Adapter API
+
+For end-to-end LLM inference with automated KV cache compression, use the multi-backend runtime adapter layer:
+
+#### HuggingFace Transformers
+
+```python
+from adaptq import create_adapter
+from adaptq.runtime_py import ModelConfig
+
+# 1. Instantiate the adapter
+adapter = create_adapter("transformers")
+
+# 2. Load the model through canonical ModelConfig
+adapter.load_model(ModelConfig(model_path="Qwen/Qwen2-0.5B", adaptq_bits=4))
+
+# 3. Generate with automatic KV cache compression
+result = adapter.generate("What is AdapTQ?", max_new_tokens=50)
+print(result.summary())
+```
+
+#### llama-cpp-python
+
+```python
+from adaptq import create_adapter
+from adaptq.runtime_py import ModelConfig
+
+# 1. Instantiate the adapter
+adapter = create_adapter("llama_cpp_python")
+
+# 2. Load the GGUF model through ModelConfig
+adapter.load_model(ModelConfig(model_path="tinyllama.gguf", adaptq_bits=4))
+
+# 3. Generate with KV footprint tracking
+result = adapter.generate("Hello!")
+print(result.summary())
+```
+
 ---
 
 ## Research Configuration: AdapTQ-LA

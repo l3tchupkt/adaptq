@@ -5,7 +5,10 @@ V2.1: Multi-backend runtime adapter layer + Replay + Compare
 
 Quick start:
     from adaptq import create_adapter
+    from adaptq.runtime_py import ModelConfig
+
     adapter = create_adapter("transformers")
+    adapter.load_model(ModelConfig(model_path="Qwen/Qwen2-0.5B"))
     result = adapter.generate("Hello!", max_new_tokens=50)
     print(result.text)
 
