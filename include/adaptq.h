@@ -29,6 +29,8 @@ typedef enum {
  */
 const char *adaptq_last_error(void);
 
+#define ADAPTQ_MAX_CAPACITY 1048576 /* maximum safe capacity bound (1M tokens) */
+
 typedef void *adaptq_ctx_t; /* opaque per-head context */
 typedef void *adaptq_mha_t; /* opaque multi-head aggregate */
 
