@@ -332,7 +332,7 @@ def stage3_benchmark():
 # Stage 4 — C ABI Integration via WSL libadaptq
 # ═══════════════════════════════════════════════════════════════════════════
 
-def stage4_c_api_integration():
+def stage4_c_api_integration(allow_skip_native=False):
     header("Stage 4 — C ABI Integration (Native Python + libadaptq)")
     print(f"  {INFO} Calls the real C++ library via native Python subprocess.")
 
@@ -483,6 +483,9 @@ print(f"SUMMARY {passed}/{passed+failed}")
     print(out.rstrip())
 
     if "SKIP:" in out:
+        if not allow_skip_native:
+            print(f"  {FAIL} libadaptq required for C ABI integration tests was not found")
+            return False
         print(f"  {INFO} libadaptq.so not found; skipping ctypes integration tests")
         return True
 
@@ -497,7 +500,7 @@ print(f"SUMMARY {passed}/{passed+failed}")
 # Stage 5 — Cross-Validation: Python ref vs C++ library
 # ═══════════════════════════════════════════════════════════════════════════
 
-def stage5_cross_validation():
+def stage5_cross_validation(allow_skip_native=False):
     header("Stage 5 — Cross-Validation (Python ref vs C++ output)")
     print(f"  {INFO} Checks that C++ attention output has high cosine similarity")
     print(f"  {INFO} with the pure Python reference (FP32 exact attention).")
@@ -595,6 +598,9 @@ print(f"XVAL {'PASS' if all_pass else 'FAIL'}")
             os.unlink(tmp)
 
     if "SKIP" in out:
+        if not allow_skip_native:
+            print(f"  {FAIL} libadaptq required for cross-validation was not found")
+            return False
         print(f"  {INFO} libadaptq not found — skipping cross-validation.")
         return True
 
@@ -612,6 +618,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--stage", type=int, default=0,
                         help="Run only this stage (1-5); 0=all")
+    parser.add_argument("--allow-skip-native", action="store_true",
+                        help="Allow skipping native tests when libadaptq is not built")
     args = parser.parse_args()
 
     print("=" * 62)
@@ -622,8 +630,8 @@ def main():
         1: ("C++ ctest (WSL)",              stage1_cpp_tests),
         2: ("MSE calibration verification", stage2_mse_calibration),
         3: ("Python reference benchmark",   stage3_benchmark),
-        4: ("C ABI integration (ctypes)",   stage4_c_api_integration),
-        5: ("Cross-validation C++ vs ref",  stage5_cross_validation),
+        4: ("C ABI integration (ctypes)",   lambda: stage4_c_api_integration(allow_skip_native=args.allow_skip_native)),
+        5: ("Cross-validation C++ vs ref",  lambda: stage5_cross_validation(allow_skip_native=args.allow_skip_native)),
     }
 
     results = {}
