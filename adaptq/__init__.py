@@ -18,6 +18,11 @@ from __future__ import annotations
 
 __version__: str = "0.2.3"
 
+from .cpu_check import check_cpu_support
+
+# Validate CPU architecture at import
+check_cpu_support()
+
 
 # -- C extension (adaptq_py) --------------------------------------------------
 # Installed by: pip install .  (builds via setup.py / pyproject.toml)
