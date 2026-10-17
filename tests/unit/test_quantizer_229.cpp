@@ -444,3 +444,30 @@ TEST_CASE("Quantizer scale is strictly positive and finite", "[quantizer][scale]
         REQUIRE(std::abs(qv.scale - (float)expected_norm) < (float)expected_norm * 0.001f + 1e-6f);
     }
 }
+
+TEST_CASE("AVX2 quantization staging produces valid scale and indices across 2, 3, and 4 bits (Issue #170)", "[quantizer][staging][avx2][issue-170]") {
+    for (int dim : {16, 32, 64, 96, 128}) {
+        Quantizer q;
+        q.init(dim, 170ULL + (uint64_t)dim);
+        auto x = gaussian_vec(dim, 77ULL + (uint64_t)dim);
+
+        for (int bits : {2, 3, 4}) {
+            QuantizedVec qv = q.quantize(x.data(), bits);
+            REQUIRE(std::isfinite(qv.scale));
+            REQUIRE(qv.scale > 0.f);
+
+            int expected_bytes = (q.padded * bits + 7) / 8;
+            REQUIRE((int)qv.data.size() == expected_bytes);
+
+            std::vector<float> recon(dim, 0.f);
+            q.dequantize(qv, recon.data());
+            for (float val : recon) {
+                REQUIRE(std::isfinite(val));
+            }
+            ReconMetrics m = compute_metrics(x.data(), recon.data(), dim);
+            CAPTURE(dim, bits, m.mse, m.cosine);
+            REQUIRE(m.cosine > 0.70);
+        }
+    }
+}
+

@@ -22,6 +22,12 @@ extern const float CB3[8];
 // 4-bit codebook: 16 centroids
 extern const float CB4[16];
 
+// Midpoint decision thresholds for 2-, 3-, and 4-bit quantization
+extern const float THRESH2[3];
+extern const float THRESH3[7];
+extern const float THRESH4[15];
+
+
 // Returns the codebook for the given bit-width (2, 3, or 4).
 const float* get_codebook(int bits);
 

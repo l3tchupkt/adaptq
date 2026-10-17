@@ -33,6 +33,94 @@ void Quantizer::init(int d, uint64_t seed) {
   gen_rademacher(D.data(), padded, seed);
 }
 
+#if (defined(__GNUC__) || defined(__clang__)) && \
+    (defined(__x86_64__) || defined(__i386__))
+#pragma GCC push_options
+#pragma GCC target("avx2,fma")
+#define ADAPTQ_HAS_AVX2 1
+#include <immintrin.h>
+#elif defined(_MSC_VER) && defined(__AVX2__)
+#define ADAPTQ_HAS_AVX2 1
+#include <immintrin.h>
+#else
+#define ADAPTQ_HAS_AVX2 0
+#endif
+
+#if ADAPTQ_HAS_AVX2
+static bool cpu_has_avx2() {
+#if (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+  return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+#elif defined(_MSC_VER) && defined(__AVX2__)
+  return true;
+#else
+  return false;
+#endif
+}
+
+static inline float hsum8(__m256 v) {
+  __m128 lo = _mm256_castps256_ps128(v), hi = _mm256_extractf128_ps(v, 1);
+  lo = _mm_add_ps(lo, hi);
+  lo = _mm_hadd_ps(lo, lo);
+  return _mm_cvtss_f32(_mm_hadd_ps(lo, lo));
+}
+
+static inline void quantize_batch_avx2(const float *buf, int n, int bits, uint8_t *idx_out) {
+  int i = 0;
+  if (bits == 4) {
+    __m256 t[15];
+    for (int k = 0; k < 15; ++k) t[k] = _mm256_set1_ps(THRESH4[k]);
+    for (; i + 7 < n; i += 8) {
+      __m256 v = _mm256_loadu_ps(buf + i);
+      __m256i idx = _mm256_setzero_si256();
+      for (int k = 0; k < 15; ++k) {
+        idx = _mm256_sub_epi32(idx, _mm256_castps_si256(_mm256_cmp_ps(v, t[k], _CMP_GE_OQ)));
+      }
+      __m128i lo = _mm256_castsi256_si128(idx);
+      __m128i hi = _mm256_extracti128_si256(idx, 1);
+      __m128i packed16 = _mm_packs_epi32(lo, hi);
+      __m128i packed8 = _mm_packus_epi16(packed16, packed16);
+      int64_t out8 = _mm_cvtsi128_si64(packed8);
+      std::memcpy(idx_out + i, &out8, sizeof(out8));
+    }
+  } else if (bits == 3) {
+    __m256 t[7];
+    for (int k = 0; k < 7; ++k) t[k] = _mm256_set1_ps(THRESH3[k]);
+    for (; i + 7 < n; i += 8) {
+      __m256 v = _mm256_loadu_ps(buf + i);
+      __m256i idx = _mm256_setzero_si256();
+      for (int k = 0; k < 7; ++k) {
+        idx = _mm256_sub_epi32(idx, _mm256_castps_si256(_mm256_cmp_ps(v, t[k], _CMP_GE_OQ)));
+      }
+      __m128i lo = _mm256_castsi256_si128(idx);
+      __m128i hi = _mm256_extracti128_si256(idx, 1);
+      __m128i packed16 = _mm_packs_epi32(lo, hi);
+      __m128i packed8 = _mm_packus_epi16(packed16, packed16);
+      int64_t out8 = _mm_cvtsi128_si64(packed8);
+      std::memcpy(idx_out + i, &out8, sizeof(out8));
+    }
+  } else if (bits == 2) {
+    __m256 t[3];
+    for (int k = 0; k < 3; ++k) t[k] = _mm256_set1_ps(THRESH2[k]);
+    for (; i + 7 < n; i += 8) {
+      __m256 v = _mm256_loadu_ps(buf + i);
+      __m256i idx = _mm256_setzero_si256();
+      for (int k = 0; k < 3; ++k) {
+        idx = _mm256_sub_epi32(idx, _mm256_castps_si256(_mm256_cmp_ps(v, t[k], _CMP_GE_OQ)));
+      }
+      __m128i lo = _mm256_castsi256_si128(idx);
+      __m128i hi = _mm256_extracti128_si256(idx, 1);
+      __m128i packed16 = _mm_packs_epi32(lo, hi);
+      __m128i packed8 = _mm_packus_epi16(packed16, packed16);
+      int64_t out8 = _mm_cvtsi128_si64(packed8);
+      std::memcpy(idx_out + i, &out8, sizeof(out8));
+    }
+  }
+  for (; i < n; ++i) {
+    idx_out[i] = (uint8_t)quantize_fast(buf[i], bits);
+  }
+}
+#endif
+
 // ---------------------------------------------------------------------------
 // Shared inner helper: L2-normalise, FWHT, scale to N(0,1) domain,
 // soft-clip (±3σ), quantise. Returns packed indices and reconstruction scale.
@@ -54,6 +142,78 @@ static inline float _quantize_core(const float *x, int dim, int padded,
                                    const int8_t *D_vec, int bits,
                                    uint8_t *idx_out) {
   float *buf = tl_float_buf;
+
+#if ADAPTQ_HAS_AVX2
+  if (cpu_has_avx2() && (bits >= 2 && bits <= 4)) {
+    // Step 1: copy and L2-normalise in AVX2
+    __m256 v_sum = _mm256_setzero_ps();
+    int i = 0;
+    for (; i + 7 < dim; i += 8) {
+      __m256 vx = _mm256_loadu_ps(x + i);
+      _mm256_storeu_ps(buf + i, vx);
+      v_sum = _mm256_fmadd_ps(vx, vx, v_sum);
+    }
+    float norm = hsum8(v_sum);
+    for (; i < dim; ++i) {
+      buf[i] = x[i];
+      norm += x[i] * x[i];
+    }
+    for (int p = dim; p < padded; ++p)
+      buf[p] = 0.f;
+    norm = sqrtf(norm + 1e-12f);
+    float inv = 1.f / norm;
+    __m256 v_inv = _mm256_set1_ps(inv);
+    int p = 0;
+    for (; p + 7 < padded; p += 8) {
+      __m256 vb = _mm256_loadu_ps(buf + p);
+      _mm256_storeu_ps(buf + p, _mm256_mul_ps(vb, v_inv));
+    }
+    for (; p < padded; ++p)
+      buf[p] *= inv;
+
+    // Steps 2-3: Rademacher + FWHT -> scale by sqrt(p)
+    fwht_forward(buf, D_vec, padded);
+    float sp = sqrtf((float)padded);
+    __m256 v_sp = _mm256_set1_ps(sp);
+    p = 0;
+    for (; p + 7 < padded; p += 8) {
+      __m256 vb = _mm256_loadu_ps(buf + p);
+      _mm256_storeu_ps(buf + p, _mm256_mul_ps(vb, v_sp));
+    }
+    for (; p < padded; ++p)
+      buf[p] *= sp;
+
+    // Step 4: Soft-clip to +-3sigma in AVX2
+    __m256 v_sum2 = _mm256_setzero_ps();
+    p = 0;
+    for (; p + 7 < padded; p += 8) {
+      __m256 vb = _mm256_loadu_ps(buf + p);
+      v_sum2 = _mm256_fmadd_ps(vb, vb, v_sum2);
+    }
+    float sum2 = hsum8(v_sum2);
+    for (; p < padded; ++p)
+      sum2 += buf[p] * buf[p];
+    float sigma = sqrtf(sum2 / (float)padded + 1e-12f);
+    float clip = 3.0f * sigma;
+    __m256 v_clip = _mm256_set1_ps(clip);
+    __m256 v_nclip = _mm256_set1_ps(-clip);
+    p = 0;
+    for (; p + 7 < padded; p += 8) {
+      __m256 vb = _mm256_loadu_ps(buf + p);
+      vb = _mm256_min_ps(vb, v_clip);
+      vb = _mm256_max_ps(vb, v_nclip);
+      _mm256_storeu_ps(buf + p, vb);
+    }
+    for (; p < padded; ++p) {
+      if (buf[p] > clip) buf[p] = clip;
+      if (buf[p] < -clip) buf[p] = -clip;
+    }
+
+    // Step 5: Quantise in the N(0,1) domain with AVX2 batch thresholds
+    quantize_batch_avx2(buf, padded, bits, idx_out);
+    return norm;
+  }
+#endif
 
   // Step 1: copy and L2-normalise
   float norm = 0.f;
@@ -238,3 +398,8 @@ void unpack_indices(const uint8_t *src, int d, int bits, uint8_t *indices) {
     throw std::invalid_argument("Unsupported bit width in unpack_indices (expected 2, 3, or 4)");
   }
 }
+
+#if ADAPTQ_HAS_AVX2 && (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+#pragma GCC pop_options
+#endif
+

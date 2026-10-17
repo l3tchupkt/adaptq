@@ -64,13 +64,13 @@ const float CB4[16] = {
 // Decision thresholds: midpoints between adjacent centroids.
 // Quantize to index i iff THRESH[i-1] <= v < THRESH[i].
 // All symmetric codebooks have THRESH[N/2 - 1] == 0.0f exactly.
-static const float THRESH2[3] = {
+const float THRESH2[3] = {
     (-1.5104f + -0.4528f) * 0.5f,  // -0.9816
     0.0f,                           //  0.0000
     ( 0.4528f +  1.5104f) * 0.5f,  //  0.9816
 };
 
-static const float THRESH3[7] = {
+const float THRESH3[7] = {
     (-2.1529f + -1.3439f) * 0.5f,  // -1.7484
     (-1.3439f + -0.7560f) * 0.5f,  // -1.0500
     (-0.7560f + -0.2451f) * 0.5f,  // -0.5006
@@ -80,7 +80,7 @@ static const float THRESH3[7] = {
     ( 1.3439f +  2.1529f) * 0.5f,  //  1.7484
 };
 
-static const float THRESH4[15] = {
+const float THRESH4[15] = {
     // Derived from corrected symmetric CB4 (issue #229)
     (-2.4008f + -1.8944f) * 0.5f,  // -2.1476
     (-1.8944f + -1.5105f) * 0.5f,  // -1.7025
