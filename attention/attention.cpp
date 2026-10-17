@@ -87,6 +87,75 @@ static inline float hsum8(__m256 v) {
   return _mm_cvtss_f32(_mm_hadd_ps(lo, lo));
 }
 
+// Fast AVX2 vector exponential approximation (Cephes single-precision minimax)
+static inline __m256 exp8_ps(__m256 x) {
+  const __m256 exp_hi = _mm256_set1_ps(88.3762626647949f);
+  const __m256 exp_lo = _mm256_set1_ps(-88.3762626647949f);
+  x = _mm256_min_ps(x, exp_hi);
+  x = _mm256_max_ps(x, exp_lo);
+
+  const __m256 log2ef = _mm256_set1_ps(1.44269504088896341f);
+  const __m256 c_half = _mm256_set1_ps(0.5f);
+  __m256 fx = _mm256_floor_ps(_mm256_fmadd_ps(x, log2ef, c_half));
+
+  const __m256 c1 = _mm256_set1_ps(-0.693359375f);
+  const __m256 c2 = _mm256_set1_ps(2.12194440e-4f);
+  __m256 x_r = _mm256_fmadd_ps(fx, c1, x);
+  x_r = _mm256_fmadd_ps(fx, c2, x_r);
+
+  const __m256 p0 = _mm256_set1_ps(1.9875691500E-4f);
+  const __m256 p1 = _mm256_set1_ps(1.3981999507E-3f);
+  const __m256 p2 = _mm256_set1_ps(8.3334519073E-3f);
+  const __m256 p3 = _mm256_set1_ps(4.1665795894E-2f);
+  const __m256 p4 = _mm256_set1_ps(1.6666665459E-1f);
+  const __m256 p5 = _mm256_set1_ps(5.0000001201E-1f);
+
+  __m256 y = _mm256_fmadd_ps(p0, x_r, p1);
+  y = _mm256_fmadd_ps(y, x_r, p2);
+  y = _mm256_fmadd_ps(y, x_r, p3);
+  y = _mm256_fmadd_ps(y, x_r, p4);
+  y = _mm256_fmadd_ps(y, x_r, p5);
+  y = _mm256_fmadd_ps(y, _mm256_mul_ps(x_r, x_r), x_r);
+  y = _mm256_add_ps(y, _mm256_set1_ps(1.0f));
+
+  __m256i emm0 = _mm256_cvttps_epi32(fx);
+  emm0 = _mm256_add_epi32(emm0, _mm256_set1_epi32(127));
+  emm0 = _mm256_slli_epi32(emm0, 23);
+  __m256 scale = _mm256_castsi256_ps(emm0);
+
+  return _mm256_mul_ps(y, scale);
+}
+
+// Vectorized softmax: exponential, horizontal sum reduction, and normalization
+static inline void softmax_avx2(float *logits, int n, float mx) {
+  int j = 0;
+  __m256 v_mx = _mm256_set1_ps(mx);
+  __m256 sum_vec = _mm256_setzero_ps();
+  for (; j + 7 < n; j += 8) {
+    __m256 v_in = _mm256_loadu_ps(logits + j);
+    __m256 v_diff = _mm256_sub_ps(v_in, v_mx);
+    __m256 v_exp = exp8_ps(v_diff);
+    _mm256_storeu_ps(logits + j, v_exp);
+    sum_vec = _mm256_add_ps(sum_vec, v_exp);
+  }
+  float sv = hsum8(sum_vec);
+  for (; j < n; ++j) {
+    logits[j] = expf(logits[j] - mx);
+    sv += logits[j];
+  }
+  float inv = (sv > 0.f && std::isfinite(sv)) ? (1.f / sv) : (1.f / (float)n);
+  __m256 v_inv = _mm256_set1_ps(inv);
+  j = 0;
+  for (; j + 7 < n; j += 8) {
+    __m256 v_val = _mm256_loadu_ps(logits + j);
+    _mm256_storeu_ps(logits + j, _mm256_mul_ps(v_val, v_inv));
+  }
+  for (; j < n; ++j) {
+    logits[j] *= inv;
+  }
+}
+
+
 // ---------------------------------------------------------------------------
 // SINGLE-TOKEN K-dot: used for tail processing
 // ---------------------------------------------------------------------------
@@ -419,14 +488,7 @@ static void compute_avx2(const float *qr, float *acc, const float *k_cb, const f
       mx = logits[i];
   }
 
-  float sv = 0.f;
-  for (int j = 0; j < n; ++j) {
-    logits[j] = expf(logits[j] - mx);
-    sv += logits[j];
-  }
-  float inv = 1.f / sv;
-  for (int j = 0; j < n; ++j)
-    logits[j] *= inv;
+  softmax_avx2(logits, n, mx);
 
   memset(acc, 0, padded * sizeof(float));
 
@@ -466,7 +528,7 @@ static void compute_avx2(const float *qr, float *acc, const float *k_cb, const f
     for (; ii < n && mass < v_mass_thresh; ++ii) {
       int s = slots[ord[ii]];
       float w = logits[ord[ii]];
-      vaccum1<BITS>(acc, vb + (size_t)s * pb, w * vscale[s] * isp, cl, ch,
+      vaccum1<V_BITS>(acc, vb + (size_t)s * v_pb, w * vscale[s] * isp, v_cl, v_ch,
                     padded);
       mass += w;
     }

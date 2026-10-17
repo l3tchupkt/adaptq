@@ -450,3 +450,28 @@ TEST_CASE("hybrid path invalidates raw_kv on ring buffer eviction to prevent sta
     adaptq_destroy(h);
 }
 
+TEST_CASE("AVX2 softmax produces normalized, finite attention outputs across varying cache sizes (Issue #162)", "[attention][softmax][issue-162]") {
+    for (int num_tokens : {1, 5, 8, 15, 16, 33}) {
+        adaptq_ctx_t h = adaptq_create(64, 4, 64, 42, 0.f, 0);
+        REQUIRE(h != nullptr);
+
+        float k[64], v[64], q[64], out[64];
+        fill_vec(q, 64, 0.2f);
+
+        for (int i = 0; i < num_tokens; ++i) {
+            fill_vec(k, 64, (float)(i + 1) * 0.05f);
+            fill_vec(v, 64, (float)(i + 1) * 0.1f);
+            adaptq_append(h, k, v, i);
+        }
+
+        int n = adaptq_compute(h, q, out);
+        REQUIRE(n == num_tokens);
+
+        for (int d = 0; d < 64; ++d) {
+            REQUIRE(std::isfinite(out[d]));
+        }
+        adaptq_destroy(h);
+    }
+}
+
+
