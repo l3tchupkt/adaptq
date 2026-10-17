@@ -3,15 +3,16 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
-  workflow_dispatch:  # Allow manual triggering for testing
+  workflow_dispatch:  # Build and check only; does not publish to production PyPI
+
+permissions:
+  contents: read
 
 jobs:
-  build-and-publish:
-    name: Build and publish Python distribution
+  build:
+    name: Build distribution and validate metadata
     runs-on: ubuntu-latest
-
     permissions:
-      id-token: write  # IMPORTANT: Mandatory for PyPI Trusted Publishing
       contents: read
 
     steps:
@@ -29,17 +30,53 @@ jobs:
           pip install build twine setuptools pybind11
 
       - name: Build wheel and Source Distribution
-        run: |
-          python -m build
+        run: python -m build
 
       - name: Check metadata with Twine
         run: twine check dist/*
 
-      - name: Publish to PyPI
-        # Only publish if this is a real release or triggered manually on the master/v2 branches
-        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+      - name: Validate Release Tag vs Package Version
+        if: github.event_name == 'release'
+        run: |
+          PKG_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "Package version: ${PKG_VERSION}"
+          echo "Release tag version: ${TAG_VERSION}"
+          if [ "${PKG_VERSION}" != "${TAG_VERSION}" ]; then
+            echo "ERROR: pyproject.toml version (${PKG_VERSION}) does not match release tag (${TAG_VERSION})"
+            exit 1
+          fi
+
+      - name: Store distribution packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+          retention-days: 5
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    # Strict gate: Only execute on published GitHub Releases with valid semver tag
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+
+    environment:
+      name: pypi
+      url: https://pypi.org/p/adaptq
+
+    permissions:
+      contents: read
+      id-token: write  # Scoped exclusively to the publish job under the pypi environment
+
+    steps:
+      - name: Download distribution packages
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # This action uses OIDC (Trusted Publishing). 
-          # You do NOT need to set a PYPI_API_TOKEN secret if configured correctly on PyPI.
           verbose: true
