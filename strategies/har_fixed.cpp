@@ -3,6 +3,7 @@
 #include <adaptq/storage.h>
 #include <adaptq/config.h>
 #include <adaptq/quality.h>
+#include <adaptq/kernel.h>
 #include <codebook.h>
 #include <fwht.h>
 #include <quantizer.h>
@@ -58,12 +59,18 @@ struct ThreadLocalWorkspace {
   std::vector<int> ord;
   std::vector<float> q_rot;
   std::vector<float> v_acc;
+  std::vector<CompressResult> k_results;
+  std::vector<CompressResult> v_results;
+  std::vector<float> v_weights;
 
   void ensure_capacity(int n, int padded) {
     if (logits.size() < (size_t)n) {
       logits.resize(n);
       slots.resize(n);
       ord.resize(n);
+      k_results.resize(n);
+      v_results.resize(n);
+      v_weights.resize(n);
     }
     if (q_rot.size() < (size_t)padded) {
       q_rot.resize(padded);
@@ -219,7 +226,11 @@ public:
         qn = sqrtf(qn + 1e-12f);
         float inv_qn = 1.f / qn;
         for (int i = 0; i < padded; ++i) qr[i] *= inv_qn;
-        fwht_forward(qr, quant_->D.data(), padded);
+        if (ctx.kernel) {
+            ctx.kernel->fwht_forward(qr, quant_->D.data(), padded);
+        } else {
+            fwht_forward(qr, quant_->D.data(), padded);
+        }
         float sp = sqrtf((float)padded);
         for (int i = 0; i < padded; ++i) qr[i] *= sp * qn;
 
@@ -227,50 +238,86 @@ public:
         const float  attn_s = 1.f / (sqrtf((float)dim) * (float)padded);
         const float  isp    = 1.f / sqrtf((float)padded);
 
-        /* 2. Build slot list from storage backend */
-        for (int i = 0; i < n; ++i) slots[i] = i;
-
-        /* 3. K-dot + softmax (scalar reference path) */
-        float mx = -1e30f;
+        /* 2. Build slot list and read K results from storage */
+        CompressResult *kr_buf = tl_ws.k_results.data();
         for (int i = 0; i < n; ++i) {
-            CompressResult kr = ctx.storage->read((StorageSlot)slots[i]);
-            float dot = kdot_ref(qr, kr.data, cb, padded, bits);
-            logits[i] = dot * attn_s * kr.scale;
-            if (logits[i] > mx) mx = logits[i];
+            slots[i] = i;
+            kr_buf[i] = ctx.storage->read((StorageSlot)slots[i]);
+        }
+
+        /* 3. K-dot + softmax */
+        float mx = -1e30f;
+        if (ctx.kernel) {
+            ctx.kernel->kdot_batch(qr, kr_buf, n, padded, bits, logits);
+            const float inv_sqrtdim = 1.f / sqrtf((float)dim);
+            for (int i = 0; i < n; ++i) {
+                logits[i] *= inv_sqrtdim;
+                if (logits[i] > mx) mx = logits[i];
+            }
+        } else {
+            for (int i = 0; i < n; ++i) {
+                float dot = kdot_ref(qr, kr_buf[i].data, cb, padded, bits);
+                logits[i] = dot * attn_s * kr_buf[i].scale;
+                if (logits[i] > mx) mx = logits[i];
+            }
         }
         float sv = 0.f;
         for (int i = 0; i < n; ++i) {
             logits[i] = expf(logits[i] - mx);
             sv += logits[i];
         }
-        float inv_s = 1.f / sv;
+        float inv_s = 1.f / (sv + 1e-12f);
         for (int i = 0; i < n; ++i) logits[i] *= inv_s;
 
         /* 4. V accumulation with optional sparse-V */
         float *acc = tl_ws.v_acc.data();
         memset(acc, 0, padded * sizeof(float));
 
+        CompressResult *vr_buf = tl_ws.v_results.data();
+        float *vw_buf = tl_ws.v_weights.data();
+
         if (v_mass_ <= 0.f) {
-            for (int i = 0; i < n; ++i) {
-                CompressResult vr = ctx.storage->read((StorageSlot)slots[i] + (StorageSlot)ctx.cache_capacity);
-                vaccum_ref(acc, vr.data, vr.scale * logits[i] * isp, cb, padded, bits);
+            if (ctx.kernel) {
+                for (int i = 0; i < n; ++i) {
+                    vr_buf[i] = ctx.storage->read((StorageSlot)slots[i] + (StorageSlot)ctx.cache_capacity);
+                    vw_buf[i] = logits[i] * isp;
+                }
+                ctx.kernel->vaccum_batch(acc, vr_buf, vw_buf, n, padded, bits);
+            } else {
+                for (int i = 0; i < n; ++i) {
+                    CompressResult vr = ctx.storage->read((StorageSlot)slots[i] + (StorageSlot)ctx.cache_capacity);
+                    vaccum_ref(acc, vr.data, vr.scale * logits[i] * isp, cb, padded, bits);
+                }
             }
         } else {
             /* Sparse-V: accumulate only tokens contributing to v_mass_ of total */
             for (int i = 0; i < n; ++i) ord[i] = i;
             std::sort(ord, ord + n,
                       [&](int a, int b){ return logits[a] > logits[b]; });
+            int m_tokens = 0;
             float mass = 0.f;
             for (int i = 0; i < n && mass < v_mass_; ++i) {
                 int idx = ord[i];
-                CompressResult vr = ctx.storage->read((StorageSlot)slots[idx] + (StorageSlot)ctx.cache_capacity);
-                vaccum_ref(acc, vr.data, vr.scale * logits[idx] * isp, cb, padded, bits);
+                vr_buf[m_tokens] = ctx.storage->read((StorageSlot)slots[idx] + (StorageSlot)ctx.cache_capacity);
+                vw_buf[m_tokens] = logits[idx] * isp;
                 mass += logits[idx];
+                ++m_tokens;
+            }
+            if (ctx.kernel) {
+                ctx.kernel->vaccum_batch(acc, vr_buf, vw_buf, m_tokens, padded, bits);
+            } else {
+                for (int i = 0; i < m_tokens; ++i) {
+                    vaccum_ref(acc, vr_buf[i].data, vr_buf[i].scale * vw_buf[i], cb, padded, bits);
+                }
             }
         }
 
         /* 5. Inverse FWHT + copy to output */
-        fwht_inverse(acc, quant_->D.data(), padded);
+        if (ctx.kernel) {
+            ctx.kernel->fwht_inverse(acc, quant_->D.data(), padded);
+        } else {
+            fwht_inverse(acc, quant_->D.data(), padded);
+        }
         memcpy(out, acc, dim * sizeof(float));
 
         /* 6. Update quality estimate (entropy proxy) */

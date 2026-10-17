@@ -152,6 +152,7 @@ public:
     IKVStrategy     *get_strategy(int layer, int head) const;
     IStorageBackend *get_storage (int layer, int head) const;
     IKernelBackend  *get_kernel  ()                    const { return kernel_; }
+    void             set_kernel  (IKernelBackend *kernel)    { kernel_ = kernel; }
     IQualityOracle  *get_oracle  ()                    const { return oracle_.get(); }
 
     /* ---- Token log (snapshot support) --------------------------------- */

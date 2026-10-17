@@ -261,3 +261,58 @@ TEST_CASE("RuntimeContext: fp_passthrough records pre-softmax logit_max and logi
     REQUIRE(std::abs(m.logit_min - (-8.0f)) < 1e-4f);
 }
 
+class TrackingKernelBackend final : public IKernelBackend {
+public:
+    IKernelBackend *underlying = nullptr;
+    mutable int fwht_forward_calls = 0;
+    mutable int fwht_inverse_calls = 0;
+    mutable int kdot_batch_calls = 0;
+    mutable int vaccum_batch_calls = 0;
+
+    explicit TrackingKernelBackend(IKernelBackend *backend) : underlying(backend) {}
+
+    void fwht_forward(float *x, const int8_t *D, int padded) override {
+        ++fwht_forward_calls;
+        underlying->fwht_forward(x, D, padded);
+    }
+    void fwht_inverse(float *x, const int8_t *D, int padded) override {
+        ++fwht_inverse_calls;
+        underlying->fwht_inverse(x, D, padded);
+    }
+    void kdot_batch(const float *q_rot, const CompressResult *kr, int N, int padded, int bits, float *logits_out) override {
+        ++kdot_batch_calls;
+        underlying->kdot_batch(q_rot, kr, N, padded, bits, logits_out);
+    }
+    void vaccum_batch(float *acc, const CompressResult *vr, const float *weights, int N, int padded, int bits) override {
+        ++vaccum_batch_calls;
+        underlying->vaccum_batch(acc, vr, weights, N, padded, bits);
+    }
+    bool is_available() const override { return true; }
+    const char *name() const override { return "tracking"; }
+};
+
+TEST_CASE("RuntimeContext: HARFixedStrategy routes compute through IKernelBackend (Issue #150)", "[runtime][kernel][issue-150]") {
+    RuntimeContextConfig cfg = make_cfg(1, 1, 64, 4, 32);
+    RuntimeContext ctx;
+    ctx.init(cfg);
+    REQUIRE(ctx.get_kernel() != nullptr);
+
+    TrackingKernelBackend tracking_kernel(ctx.get_kernel());
+    ctx.set_kernel(&tracking_kernel);
+
+    std::vector<float> k(64), v(64), q(64), out(64, 0.f);
+    rand_vec(k.data(), 64, 10);
+    rand_vec(v.data(), 64, 11);
+    rand_vec(q.data(), 64, 12);
+
+    ctx.append(0, 0, k.data(), v.data());
+    ComputeMetrics m = ctx.compute(0, 0, q.data(), out.data());
+
+    REQUIRE(m.n_tokens_used == 1);
+    REQUIRE(tracking_kernel.fwht_forward_calls == 1);
+    REQUIRE(tracking_kernel.kdot_batch_calls == 1);
+    REQUIRE(tracking_kernel.vaccum_batch_calls == 1);
+    REQUIRE(tracking_kernel.fwht_inverse_calls == 1);
+}
+
+
