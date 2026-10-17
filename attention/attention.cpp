@@ -449,11 +449,34 @@ static void compute_avx2(const float *qr, float *acc, const float *k_cb, const f
     int *ord = tl_ws.ord.data();
     for (int ii = 0; ii < n; ++ii)
       ord[ii] = ii;
-    std::sort(ord, ord + n,
-              [&](int a, int b) { return logits[a] > logits[b]; });
+    auto cmp = [&](int a, int b) { return logits[a] > logits[b]; };
+
+    int k = (n <= 64) ? n : 64;
+    int sorted_until = 0;
     float mass = 0.f;
+
+    while (sorted_until < n) {
+      if (k < n) {
+        std::nth_element(ord + sorted_until, ord + k, ord + n, cmp);
+      }
+      std::sort(ord + sorted_until, ord + k, cmp);
+      for (int ii = sorted_until; ii < k; ++ii) {
+        mass += logits[ord[ii]];
+        if (mass >= v_mass_thresh) {
+          sorted_until = ii + 1;
+          goto selection_done;
+        }
+      }
+      sorted_until = k;
+      if (k == n) break;
+      k = std::min(n, k * 2);
+    }
+selection_done:
+
+    int limit = sorted_until;
+    mass = 0.f;
     int ii = 0;
-    for (; ii + 3 < n && mass < v_mass_thresh; ii += 4) {
+    for (; ii + 3 < limit && mass < v_mass_thresh; ii += 4) {
       int i0 = ord[ii], i1 = ord[ii + 1], i2 = ord[ii + 2], i3 = ord[ii + 3];
       int s0 = slots[i0], s1 = slots[i1], s2 = slots[i2], s3 = slots[i3];
       vaccum4<V_BITS>(
@@ -463,14 +486,15 @@ static void compute_avx2(const float *qr, float *acc, const float *k_cb, const f
           logits[i3] * vscale[s3] * isp, v_cl, v_ch, padded);
       mass += logits[i0] + logits[i1] + logits[i2] + logits[i3];
     }
-    for (; ii < n && mass < v_mass_thresh; ++ii) {
+    for (; ii < limit && mass < v_mass_thresh; ++ii) {
       int s = slots[ord[ii]];
       float w = logits[ord[ii]];
-      vaccum1<BITS>(acc, vb + (size_t)s * pb, w * vscale[s] * isp, cl, ch,
+      vaccum1<V_BITS>(acc, vb + (size_t)s * v_pb, w * vscale[s] * isp, v_cl, v_ch,
                     padded);
       mass += w;
     }
   }
+
 }
 #if defined(__GNUC__) || defined(__clang__)
 #pragma GCC pop_options
