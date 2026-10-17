@@ -266,6 +266,30 @@ if(ADAPTQ_BUILD_TESTS)
   target_link_libraries(test_kernel_selector PRIVATE adapTQ_runtime adapTQ_core Catch2::Catch2WithMain)
   catch_discover_tests(test_kernel_selector)
 
-  message(STATUS "Test targets enabled (V1: 38 tests + V2: runtime/snapshot/replay + Codebook/Kernel tests)")
+  # --- test_mmap_storage (Issue #187) --------------------------------------
+  add_executable(test_mmap_storage
+      tests/unit/test_mmap_storage.cpp)
+  target_include_directories(test_mmap_storage PRIVATE
+      include storage)
+  target_link_libraries(test_mmap_storage PRIVATE adapTQ_runtime adapTQ_core Catch2::Catch2WithMain)
+  catch_discover_tests(test_mmap_storage)
+
+  # --- test_numa_allocator (Issue #187) ------------------------------------
+  add_executable(test_numa_allocator
+      tests/unit/test_numa_allocator.cpp)
+  target_include_directories(test_numa_allocator PRIVATE
+      include storage)
+  target_link_libraries(test_numa_allocator PRIVATE adapTQ_runtime adapTQ_core Catch2::Catch2WithMain)
+  catch_discover_tests(test_numa_allocator)
+
+  # --- test_metrics_exporter (Issue #187) ----------------------------------
+  add_executable(test_metrics_exporter
+      tests/unit/test_metrics_exporter.cpp)
+  target_include_directories(test_metrics_exporter PRIVATE
+      include runtime storage strategies)
+  target_link_libraries(test_metrics_exporter PRIVATE adapTQ_runtime adapTQ_core Catch2::Catch2WithMain)
+  catch_discover_tests(test_metrics_exporter)
+
+  message(STATUS "Test targets enabled (V1: 38 tests + V2: runtime/snapshot/replay + Codebook/Kernel/Storage/Metrics tests)")
 endif()
 
