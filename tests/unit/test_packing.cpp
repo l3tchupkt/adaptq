@@ -131,3 +131,25 @@ TEST_CASE("Quantizer init and pack_indices parameter validation", "[quantizer][s
     REQUIRE_THROWS_AS(unpack_indices(in_buf, 16, 1, out_buf), std::invalid_argument);
     REQUIRE_THROWS_AS(unpack_indices(in_buf, 16, 6, out_buf), std::invalid_argument);
 }
+
+TEST_CASE("Pack and unpack for small and unaligned dimensions", "[quantizer][packing]") {
+    for (int bits : {2, 3, 4}) {
+        int mask = (1 << bits) - 1;
+        for (int d : {1, 2, 3, 4, 5, 6, 7, 9, 11, 13, 15}) {
+            std::vector<uint8_t> orig(d);
+            for (int i = 0; i < d; ++i) {
+                orig[i] = (i * 3 + 1) & mask;
+            }
+            int packed_bytes = (d * bits + 7) / 8;
+            std::vector<uint8_t> packed(packed_bytes, 0);
+            std::vector<uint8_t> unpacked(d, 0xFF);
+
+            pack_indices(orig.data(), d, bits, packed.data());
+            unpack_indices(packed.data(), d, bits, unpacked.data());
+
+            for (int i = 0; i < d; ++i) {
+                REQUIRE(unpacked[i] == orig[i]);
+            }
+        }
+    }
+}
