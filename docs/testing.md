@@ -166,12 +166,11 @@ Rademacher-FWHT distribution after ±3σ normalisation (values in [−1, 1]):
 | bits | Levels | Codebook |
 |------|--------|---------|
 | 2    | 4      | `−1.5104, −0.4528, 0.4528, 1.5104` |
-| 3    | 8      | `−2.1529 … +2.1529` (8 values) |
-| 4    | 16     | `−2.7326 … +3.5714` (16 values, asymmetric) |
+| 3    | 8      | `−2.1529 … +2.1529` (8 values, symmetric) |
+| 4    | 16     | `−2.4008 … +2.4008` (16 values, symmetric) |
 
-The asymmetric 4-bit codebook is intentional: the FWHT output has a slightly
-positive-skewed tail distribution after Rademacher mixing, so more centroid
-density is allocated to positive values.
+All Lloyd-Max codebooks (2-bit, 3-bit, and 4-bit) are symmetric about zero
+and strictly ascending, matching the theoretical Max-Lloyd Gaussian quantizer.
 
 ---
 
