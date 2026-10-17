@@ -127,4 +127,16 @@ const char *adaptq_version(void);
 
 #ifdef __cplusplus
 }
+
+/* Backward-compatibility overloads for C++ callers using unified bits parameter */
+inline adaptq_ctx_t adaptq_create(int dim, int bits, int capacity, uint64_t seed,
+                                  float v_mass, int hybrid_thresh) {
+  return adaptq_create(dim, bits, bits, capacity, seed, v_mass, hybrid_thresh);
+}
+
+inline adaptq_mha_t adaptq_mha_create(int n_heads, int dim, int bits, int capacity,
+                                      uint64_t base_seed, float v_mass,
+                                      int hybrid_thresh) {
+  return adaptq_mha_create(n_heads, dim, bits, bits, capacity, base_seed, v_mass, hybrid_thresh);
+}
 #endif

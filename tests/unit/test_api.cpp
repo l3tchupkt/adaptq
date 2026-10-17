@@ -97,6 +97,7 @@ TEST_CASE("adaptq_create with invalid parameters returns null", "[api][security]
     REQUIRE(adaptq_create(128, 1, 1024, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 5, 1024, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 4, -1, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(128, 4, 0, 42, 0.f, 0) == nullptr);
     REQUIRE(adaptq_create(128, 4, 1024, 42, 0.f, -100) == nullptr);
     REQUIRE(std::string(adaptq_last_error()).size() > 0);
 }
@@ -256,6 +257,11 @@ TEST_CASE("multi-head API rejects null handles and buffers without crashing", "[
     REQUIRE(std::string(adaptq_last_error()).find("adaptq_mha_total_kv_bytes: null handle") != std::string::npos);
 
     adaptq_mha_destroy(nullptr);
+
+    REQUIRE(adaptq_mha_create(0, 64, 4, 16, 0, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_mha_create(2, 0, 4, 16, 0, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_mha_create(2, 64, 4, 0, 0, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_mha_create(2, 64, 4, -1, 0, 0.f, 0) == nullptr);
 
     adaptq_mha_t mha = adaptq_mha_create(2, 64, 4, 4, 0, 0.f, 0);
     INFO(adaptq_last_error());
