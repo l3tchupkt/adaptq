@@ -233,7 +233,7 @@ void softmax(float *x, int n) {
     x[i] = expf(x[i] - mx);
     s += x[i];
   }
-  if (s > 0.f && std::isfinite(s)) {
+  if (s > 1e-12f && std::isfinite(s)) {
     float inv = 1.f / s;
     for (int i = 0; i < n; ++i)
       x[i] *= inv;
@@ -424,9 +424,15 @@ static void compute_avx2(const float *qr, float *acc, const float *k_cb, const f
     logits[j] = expf(logits[j] - mx);
     sv += logits[j];
   }
-  float inv = 1.f / sv;
-  for (int j = 0; j < n; ++j)
-    logits[j] *= inv;
+  if (sv > 1e-12f && std::isfinite(sv)) {
+    float inv = 1.f / sv;
+    for (int j = 0; j < n; ++j)
+      logits[j] *= inv;
+  } else {
+    float inv = 1.f / (float)n;
+    for (int j = 0; j < n; ++j)
+      logits[j] = inv;
+  }
 
   memset(acc, 0, padded * sizeof(float));
 
@@ -539,7 +545,7 @@ int AttentionHead::compute(const float *q, float *out) const {
     for (int i = 0; i < dim; ++i)
       qn += q[i] * q[i];
     qn = sqrtf(qn + 1e-12f);
-    float inv = 1.f / qn;
+    float inv = (qn > 1e-12f && std::isfinite(qn)) ? (1.f / qn) : 0.f;
     for (int i = 0; i < padded; ++i)
       qr[i] *= inv;
     fwht_forward(qr, quant.D.data(), padded);
@@ -576,8 +582,13 @@ int AttentionHead::compute(const float *q, float *out) const {
       logits[i] = expf(logits[i] - mx);
       sv += logits[i];
     }
-    float inv = 1.f / sv;
-    for (int i = 0; i < n; ++i) logits[i] *= inv;
+    if (sv > 1e-12f && std::isfinite(sv)) {
+      float inv = 1.f / sv;
+      for (int i = 0; i < n; ++i) logits[i] *= inv;
+    } else {
+      float inv = 1.f / (float)n;
+      for (int i = 0; i < n; ++i) logits[i] = inv;
+    }
     
     memset(acc, 0, padded * sizeof(float));
     for (int i = 0; i < n; ++i) {
