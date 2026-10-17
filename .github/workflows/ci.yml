@@ -163,3 +163,34 @@ jobs:
 
       - name: Benchmark (informational only)
         run: python python/benchmark.py || true
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job: Source Distribution Packaging Smoke Test (Issue #235)
+  # ───────────────────────────────────────────────────────────────────────────
+  sdist-smoke-test:
+    name: sdist Packaging Smoke Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install packaging dependencies
+        run: pip install build pybind11 numpy
+
+      - name: Build source distribution
+        run: python -m build --sdist
+
+      - name: Extract source distribution and test clean install
+        run: |
+          mkdir -p /tmp/sdist_test
+          tar -xzf dist/adaptq-*.tar.gz -C /tmp/sdist_test --strip-components=1
+          cd /tmp/sdist_test
+          pip install .
+          python -c "import adaptq; print('adaptq version:', adaptq.__version__)"
+          python -c "import adaptq_py; print('adaptq_py loaded successfully')"
+
