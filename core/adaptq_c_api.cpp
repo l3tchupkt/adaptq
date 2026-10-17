@@ -266,16 +266,17 @@ size_t adaptq_mha_total_kv_bytes(adaptq_mha_t h) {
 
 unsigned int adaptq_features(void) {
   unsigned int f = ADAPTQ_FEAT_HYBRID | ADAPTQ_FEAT_SPARSE_V;
-#ifdef __AVX2__
-  f |= ADAPTQ_FEAT_AVX2;
-#endif
+  if (adaptq_has_avx2()) {
+    f |= ADAPTQ_FEAT_AVX2;
+  }
   return f;
 }
 
 const char *adaptq_version(void) {
-#ifdef __AVX2__
-  return "3.2.0-avx2";
-#else
-  return "3.2.0-scalar";
-#endif
+  if (adaptq_has_avx2()) {
+    return "3.2.0-avx2";
+  } else {
+    return "3.2.0-scalar";
+  }
 }
+

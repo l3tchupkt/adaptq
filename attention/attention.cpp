@@ -675,3 +675,7 @@ int AttentionHead::compute_batch(const float *queries, int num_queries,
 
   return kv_buf.size;
 }
+
+int adaptq_has_avx2(void) {
+  return ADAPTQ_HAS_AVX2;
+}

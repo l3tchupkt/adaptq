@@ -36,3 +36,4 @@ struct AttentionHead {
 
 float dot_product(const float *a, const float *b, int n);
 void softmax(float *x, int n);
+int adaptq_has_avx2(void);
