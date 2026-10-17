@@ -117,8 +117,8 @@ int codebook_size(int bits) {
 // Branchless binary-search via conditional adds.
 // No branch mispredictions; compiles to cmov chains.
 int quantize_fast(float v, int bits) {
-    if (std::isnan(v)) {
-        // Handle NaN gracefully: map to closest-to-zero centroid
+    if (!std::isfinite(v)) {
+        // Handle non-finite (NaN / ±Inf) gracefully: map to closest-to-zero centroid
         if (bits <= 2) return 1; // CB2[1] = -0.4528f
         if (bits == 3) return 3; // CB3[3] = -0.2451f
         return 7;                // CB4[7] = -0.1258f (closest to zero; tied with CB4[8]=+0.1258)
@@ -146,7 +146,7 @@ int quantize_fast(float v, int bits) {
 // Legacy fallback (used in tests for correctness comparison)
 int quantize_scalar(float val, const float* cb, int cb_size) {
     if (!cb || cb_size <= 0) return 0;
-    if (std::isnan(val)) return 0;
+    if (!std::isfinite(val)) return 0;
     if (val >= cb[cb_size - 1]) return cb_size - 1;
     if (val <= cb[0]) return 0;
     int best = 0;

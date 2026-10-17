@@ -121,12 +121,23 @@ public:
                    const ExecutionContext & /*ctx*/) override {
         if (n <= 0 || !logits) return -1.f;
 
-        float lo = logits[0], hi = logits[0];
-        for (int i = 1; i < n; ++i) {
+        int first_finite = -1;
+        for (int i = 0; i < n; ++i) {
+            if (std::isfinite(logits[i])) {
+                first_finite = i;
+                break;
+            }
+        }
+        if (first_finite < 0) return -1.f;
+
+        float lo = logits[first_finite], hi = logits[first_finite];
+        for (int i = first_finite + 1; i < n; ++i) {
+            if (!std::isfinite(logits[i])) continue;
             if (logits[i] < lo) lo = logits[i];
             if (logits[i] > hi) hi = logits[i];
         }
         float spread = hi - lo;
+        if (!std::isfinite(spread) || spread < 0.f) return -1.f;
 
         /* Heuristic: spread < 2.0 → near-uniform attention → safe.
          * spread > 20.0 → very peaked → risky.
