@@ -163,3 +163,37 @@ jobs:
 
       - name: Benchmark (informational only)
         run: python python/benchmark.py || true
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 4: AddressSanitizer + UndefinedBehaviorSanitizer C++ unit tests
+  # ───────────────────────────────────────────────────────────────────────────
+  sanitizers-linux:
+    name: Linux ASan + UBSan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ libgomp1
+
+      - name: Configure CMake with ASan + UBSan
+        run: |
+          cmake -B build-asan \
+                -G Ninja \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DADAPTQ_BUILD_TESTS=ON \
+                -DADAPTQ_ENABLE_SANITIZERS=ON
+
+      - name: Build
+        run: cmake --build build-asan --parallel
+
+      - name: Run CTest under ASan + UBSan
+        run: ctest --output-on-failure --parallel 4
+        working-directory: build-asan
+        env:
+          ASAN_OPTIONS: "detect_leaks=1:halt_on_error=1:abort_on_error=1"
+          UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1:abort_on_error=1"
