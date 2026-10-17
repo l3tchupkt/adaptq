@@ -6,6 +6,115 @@
 #include <cstring>
 #include <stdexcept>
 
+void unpack_indices(const uint8_t *src, int d, int bits, uint8_t *indices);
+
+#if (defined(__GNUC__) || defined(__clang__)) && \
+    (defined(__x86_64__) || defined(__i386__))
+#pragma GCC push_options
+#pragma GCC target("avx2,fma")
+#define ADAPTQ_HAS_AVX2 1
+#include <immintrin.h>
+#elif defined(_MSC_VER) && defined(__AVX2__)
+#define ADAPTQ_HAS_AVX2 1
+#include <immintrin.h>
+#else
+#define ADAPTQ_HAS_AVX2 0
+#endif
+
+#if ADAPTQ_HAS_AVX2
+static inline __m256 lup8(const __m256i idx, const __m256 cl, const __m256 ch) {
+  const __m256i m7 = _mm256_set1_epi32(7);
+  __m256i gt7 = _mm256_cmpgt_epi32(idx, m7);
+  __m256i i7 = _mm256_and_si256(idx, m7);
+  return _mm256_blendv_ps(_mm256_permutevar8x32_ps(cl, i7),
+                          _mm256_permutevar8x32_ps(ch, i7),
+                          _mm256_castsi256_ps(gt7));
+}
+
+template <int BITS> struct Decode;
+
+template <> struct Decode<4> {
+  static constexpr int step = 4;
+  static inline __m256i f(const uint8_t *p) {
+    uint32_t val;
+    memcpy(&val, p, 4);
+    __m128i h = _mm_cvtepu8_epi32(_mm_cvtsi32_si128((int)((val >> 4) & 0x0F0F0F0F)));
+    __m128i l = _mm_cvtepu8_epi32(_mm_cvtsi32_si128((int)(val & 0x0F0F0F0F)));
+    return _mm256_set_m128i(_mm_unpackhi_epi32(h, l), _mm_unpacklo_epi32(h, l));
+  }
+};
+
+template <> struct Decode<3> {
+  static constexpr int step = 3;
+  static inline __m256i f(const uint8_t *p) {
+    uint32_t val = ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | (uint32_t)p[2];
+    __m256i v256 = _mm256_set1_epi32((int)val);
+    __m256i shifts = _mm256_setr_epi32(21, 18, 15, 12, 9, 6, 3, 0);
+    return _mm256_and_si256(_mm256_srlv_epi32(v256, shifts), _mm256_set1_epi32(7));
+  }
+};
+
+template <> struct Decode<2> {
+  static constexpr int step = 2;
+  static inline __m256i f(const uint8_t *p) {
+    uint16_t v16;
+    memcpy(&v16, p, 2);
+    uint32_t val = (uint32_t)v16;
+    __m256i v256 = _mm256_set1_epi32((int)val);
+    __m256i shifts = _mm256_setr_epi32(6, 4, 2, 0, 14, 12, 10, 8);
+    return _mm256_and_si256(_mm256_srlv_epi32(v256, shifts), _mm256_set1_epi32(3));
+  }
+};
+
+static bool cpu_has_avx2() {
+#if (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+  return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+#elif defined(_MSC_VER) && defined(__AVX2__)
+  return true;
+#else
+  return false;
+#endif
+}
+
+template <int BITS>
+static void dequantize_avx2_core(const uint8_t *packed, float scale, int padded_d,
+                                 int dim, const float *cb, const int8_t *D,
+                                 float *out, float *buf, uint8_t *idx_buf) {
+  const __m256 cl = _mm256_loadu_ps(cb);
+  const __m256 ch = _mm256_loadu_ps(cb + 8);
+  const float inv_sq = 1.f / sqrtf((float)padded_d);
+  const __m256 v_inv_sq = _mm256_set1_ps(inv_sq);
+
+  int b = 0;
+  int i = 0;
+  for (; i + 7 < padded_d; i += 8) {
+    __m256i idx = Decode<BITS>::f(packed + b);
+    __m256 vals = lup8(idx, cl, ch);
+    _mm256_storeu_ps(buf + i, _mm256_mul_ps(vals, v_inv_sq));
+    b += Decode<BITS>::step;
+  }
+  if (i < padded_d) {
+    unpack_indices(packed, padded_d, BITS, idx_buf);
+    for (; i < padded_d; ++i) {
+      buf[i] = cb[idx_buf[i]] * inv_sq;
+    }
+  }
+
+  fwht_inverse(buf, D, padded_d);
+
+  const __m256 v_scale = _mm256_set1_ps(scale);
+  int j = 0;
+  for (; j + 7 < dim; j += 8) {
+    __m256 vb = _mm256_loadu_ps(buf + j);
+    _mm256_storeu_ps(out + j, _mm256_mul_ps(vb, v_scale));
+  }
+  for (; j < dim; ++j) {
+    out[j] = buf[j] * scale;
+  }
+}
+#endif
+
+
 // Maximum padded dimension supported by thread-local scratch buffers.
 // padded = next_pow2(head_dim). If head_dim > 512, padded > 1024 at 2-bit.
 // Increase this constant (and recompile) if you need larger head dims.
@@ -115,17 +224,7 @@ QuantizedVec Quantizer::quantize(const float *x, int bits) const {
 }
 
 void Quantizer::dequantize(const QuantizedVec &q, float *out) const {
-  int d = q.dim;
-  const float *cb = get_codebook(q.bits);
-  float inv_sq = 1.f / sqrtf((float)d);
-  uint8_t *idx = tl_idx_buf;
-  float *buf = tl_float_buf;
-  unpack_indices(q.data.data(), d, q.bits, idx);
-  for (int i = 0; i < d; ++i)
-    buf[i] = cb[idx[i]] * inv_sq;
-  fwht_inverse(buf, D.data(), d);
-  for (int i = 0; i < dim; ++i)
-    out[i] = buf[i] * q.scale;
+  dequantize_raw(q.data.data(), q.scale, q.dim, q.bits, out);
 }
 
 float Quantizer::quantize_into(const float *x, int bits,
@@ -138,6 +237,23 @@ float Quantizer::quantize_into(const float *x, int bits,
 
 void Quantizer::dequantize_raw(const uint8_t *packed, float scale, int padded_d,
                                int bits_arg, float *out) const {
+#if ADAPTQ_HAS_AVX2
+  if (cpu_has_avx2() && (bits_arg >= 2 && bits_arg <= 4)) {
+    const float *cb = get_codebook(bits_arg);
+    float *buf = tl_float_buf;
+    uint8_t *idx = tl_idx_buf;
+    if (bits_arg == 4) {
+      dequantize_avx2_core<4>(packed, scale, padded_d, dim, cb, D.data(), out, buf, idx);
+      return;
+    } else if (bits_arg == 3) {
+      dequantize_avx2_core<3>(packed, scale, padded_d, dim, cb, D.data(), out, buf, idx);
+      return;
+    } else if (bits_arg == 2) {
+      dequantize_avx2_core<2>(packed, scale, padded_d, dim, cb, D.data(), out, buf, idx);
+      return;
+    }
+  }
+#endif
   const float *cb = get_codebook(bits_arg);
   float inv_sq = 1.f / sqrtf((float)padded_d);
   uint8_t *idx = tl_idx_buf;
@@ -238,3 +354,8 @@ void unpack_indices(const uint8_t *src, int d, int bits, uint8_t *indices) {
     throw std::invalid_argument("Unsupported bit width in unpack_indices (expected 2, 3, or 4)");
   }
 }
+
+#if ADAPTQ_HAS_AVX2 && (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+#pragma GCC pop_options
+#endif
+

@@ -444,3 +444,26 @@ TEST_CASE("Quantizer scale is strictly positive and finite", "[quantizer][scale]
         REQUIRE(std::abs(qv.scale - (float)expected_norm) < (float)expected_norm * 0.001f + 1e-6f);
     }
 }
+
+TEST_CASE("AVX2 dequantization produces identical, finite reconstructions across all bit widths (Issue #172)", "[quantizer][dequantize][avx2][issue-172]") {
+    for (int dim : {16, 32, 64, 96, 128}) {
+        Quantizer q;
+        q.init(dim, 172ULL + (uint64_t)dim);
+        auto x = gaussian_vec(dim, 42ULL + (uint64_t)dim);
+
+        for (int bits : {2, 3, 4}) {
+            QuantizedVec qv = q.quantize(x.data(), bits);
+            std::vector<float> recon(dim, 0.f);
+            q.dequantize(qv, recon.data());
+
+            for (int i = 0; i < dim; ++i) {
+                REQUIRE(std::isfinite(recon[i]));
+            }
+
+            ReconMetrics m = compute_metrics(x.data(), recon.data(), dim);
+            CAPTURE(dim, bits, m.mse, m.cosine);
+            REQUIRE(m.cosine > 0.70);
+        }
+    }
+}
+
