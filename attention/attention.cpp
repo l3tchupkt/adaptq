@@ -6,6 +6,7 @@
 
 /* Portable cache prefetch — __builtin_prefetch is GCC/Clang only */
 #if defined(_MSC_VER)
+#  include <intrin.h>
 #  include <xmmintrin.h>
 #  define ADAPTQ_PREFETCH(ptr) _mm_prefetch(reinterpret_cast<const char*>(ptr), _MM_HINT_T1)
 #else
@@ -466,7 +467,7 @@ static void compute_avx2(const float *qr, float *acc, const float *k_cb, const f
     for (; ii < n && mass < v_mass_thresh; ++ii) {
       int s = slots[ord[ii]];
       float w = logits[ord[ii]];
-      vaccum1<BITS>(acc, vb + (size_t)s * pb, w * vscale[s] * isp, cl, ch,
+      vaccum1<V_BITS>(acc, vb + (size_t)s * v_pb, w * vscale[s] * isp, v_cl, v_ch,
                     padded);
       mass += w;
     }
@@ -604,8 +605,24 @@ int AttentionHead::compute(const float *q, float *out) const {
 
   // inside compute():
 #if ADAPTQ_HAS_AVX2
-  bool use_avx2 = true;
-#if defined(__GNUC__) || defined(__clang__)
+  bool use_avx2 = false;
+#if defined(_MSC_VER)
+  int cpu_info[4] = {0};
+  __cpuid(cpu_info, 0);
+  if (cpu_info[0] >= 7) {
+    __cpuidex(cpu_info, 1, 0);
+    const bool osxsave = (cpu_info[2] & (1 << 27)) != 0;
+    const bool avx = (cpu_info[2] & (1 << 28)) != 0;
+    const bool fma = (cpu_info[2] & (1 << 12)) != 0;
+    if (osxsave && avx && fma) {
+      unsigned long long xcr0 = _xgetbv(0);
+      if ((xcr0 & 0x6ULL) == 0x6ULL) {
+        __cpuidex(cpu_info, 7, 0);
+        use_avx2 = (cpu_info[1] & (1 << 5)) != 0;
+      }
+    }
+  }
+#elif defined(__GNUC__) || defined(__clang__)
   use_avx2 = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
 #endif
   if (use_avx2) {
