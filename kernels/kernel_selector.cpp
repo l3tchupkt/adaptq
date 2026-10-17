@@ -93,8 +93,54 @@ bool cpu_supports_avx2() {
 #endif
 }
 
+bool cpu_supports_fma() {
+#if ADAPTQ_X86_OR_X64
+#if defined(_MSC_VER)
+    int regs[4] = {};
+    __cpuid(regs, 0);
+    if (regs[0] < 1)
+        return false;
+
+    __cpuidex(regs, 1, 0);
+    const bool osxsave = (regs[2] & (1 << 27)) != 0;
+    const bool fma = (regs[2] & (1 << 12)) != 0;
+    if (!osxsave || !fma)
+        return false;
+
+    unsigned long long xcr0 = _xgetbv(0);
+    if ((xcr0 & 0x6ULL) != 0x6ULL)
+        return false;
+
+    return true;
+#elif defined(__GNUC__) || defined(__clang__)
+    if (!__builtin_cpu_supports("fma"))
+        return false;
+
+    unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
+    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx))
+        return false;
+
+    const bool osxsave = (ecx & (1U << 27)) != 0;
+    if (!osxsave)
+        return false;
+
+    uint32_t xcr0_lo = 0, xcr0_hi = 0;
+    __asm__ volatile("xgetbv" : "=a"(xcr0_lo), "=d"(xcr0_hi) : "c"(0));
+    uint64_t xcr0 = ((uint64_t)xcr0_hi << 32) | xcr0_lo;
+    if ((xcr0 & 0x6ULL) != 0x6ULL)
+        return false;
+
+    return true;
+#else
+    return false;
+#endif
+#else
+    return false;
+#endif
+}
+
 IKernelBackend *select_kernel_backend() {
-    if (!is_scalar_forced() && cpu_supports_avx2()) {
+    if (!is_scalar_forced() && cpu_supports_avx2() && cpu_supports_fma()) {
         if (IKernelBackend *backend = create_avx2_backend())
             return backend;
     }
@@ -102,3 +148,4 @@ IKernelBackend *select_kernel_backend() {
 }
 
 } /* namespace adaptq */
+
