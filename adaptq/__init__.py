@@ -98,4 +98,9 @@ __all__ = [
     # V2.1 runtime adapters
     "create_adapter",
     "list_available_backends",
+    # CPU feature detection
+    "detect_cpu_features",
+    "get_cpu_report",
 ]
+
+from .cpu_detection import detect_cpu_features, get_cpu_report
