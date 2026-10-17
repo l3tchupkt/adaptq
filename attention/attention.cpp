@@ -608,7 +608,7 @@ int AttentionHead::compute(const float *q, float *out) const {
 #if defined(__GNUC__) || defined(__clang__)
   use_avx2 = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
 #endif
-  if (use_avx2) {
+  if (use_avx2 && padded >= 16) {
 #define DISPATCH_AVX2(K_B, V_B) \
     if (k_bits == K_B && v_bits == V_B) { \
       compute_avx2<K_B, V_B>(qr, acc, k_cb, v_cb, kb, vb, kv_buf.k_scale.data(), \

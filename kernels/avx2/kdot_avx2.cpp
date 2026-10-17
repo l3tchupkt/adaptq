@@ -160,6 +160,8 @@ static void vaccum4_avx2(float *__restrict acc,
 
 namespace adaptq {
 
+IKernelBackend *create_scalar_backend();
+
 /* =========================================================================
  * AVX2KernelBackend : IKernelBackend
  * ======================================================================= */
@@ -177,6 +179,10 @@ public:
                     const CompressResult *kr,
                     int N, int padded, int bits,
                     float *logits_out) override {
+        if (padded < 16) {
+            create_scalar_backend()->kdot_batch(q_rot, kr, N, padded, bits, logits_out);
+            return;
+        }
         const float *cb = get_codebook(bits);
         __m256 cl = _mm256_loadu_ps(cb), ch = _mm256_loadu_ps(cb + 8);
         int i = 0;
@@ -205,6 +211,10 @@ public:
                       const CompressResult *vr,
                       const float          *weights,
                       int N, int padded, int bits) override {
+        if (padded < 16) {
+            create_scalar_backend()->vaccum_batch(acc, vr, weights, N, padded, bits);
+            return;
+        }
         const float *cb = get_codebook(bits);
         __m256 cl = _mm256_loadu_ps(cb), ch = _mm256_loadu_ps(cb + 8);
         memset(acc, 0, (size_t)padded * sizeof(float));
