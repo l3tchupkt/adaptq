@@ -41,9 +41,13 @@ def _find_binary() -> Optional[str]:
     exe_suffix = ".exe" if sys.platform == "win32" else ""
     binary_name = f"adapTQ_demo{exe_suffix}"
     
+    # Multi-config generators (Visual Studio, Ninja Multi-Config) put the
+    # executable in a per-configuration subdirectory, e.g. build/Release/.
     candidates = [
         pkg_dir / "build_release" / binary_name,
+        pkg_dir / "build_release" / "Release" / binary_name,
         pkg_dir / "build" / binary_name,
+        pkg_dir / "build" / "Release" / binary_name,
         pkg_dir / "build_v2" / binary_name,   # legacy fallback
         pkg_dir / binary_name,
     ]

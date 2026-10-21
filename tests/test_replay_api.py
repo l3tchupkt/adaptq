@@ -197,3 +197,21 @@ def test_snapshot_to_json_exports_json_and_file(tmp_path):
     assert json_str2 == json_str
     assert out_file.exists()
     assert json.loads(out_file.read_text(encoding="utf-8")) == data
+
+
+@pytest.mark.parametrize("build_dir", ["build", "build_release"])
+def test_find_binary_checks_multi_config_release_dir(monkeypatch, tmp_path, build_dir):
+    # `cmake --build build --config Release` with the Visual Studio generator
+    # (what CONTRIBUTING.md and the Windows CI job use) writes the CLI to
+    # build/Release/, not build/.
+    import sys
+
+    binary_name = "adapTQ_demo.exe" if sys.platform == "win32" else "adapTQ_demo"
+    release_dir = tmp_path / build_dir / "Release"
+    release_dir.mkdir(parents=True)
+    (release_dir / binary_name).write_bytes(b"")
+
+    monkeypatch.setattr(replay_api, "__file__", str(tmp_path / "adaptq" / "replay.py"))
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    assert replay_api._find_binary() == str(release_dir / binary_name)
