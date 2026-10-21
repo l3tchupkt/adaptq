@@ -450,3 +450,22 @@ TEST_CASE("hybrid path invalidates raw_kv on ring buffer eviction to prevent sta
     adaptq_destroy(h);
 }
 
+TEST_CASE("softmax guard: C API compute returns finite output with NaN key vectors", "[api][softmax-guard]") {
+    adaptq_ctx_t h = adaptq_create(64, 4, 4, 32, 42, 0.f, 64);
+    REQUIRE(h != nullptr);
+
+    float k[64], v[64], q[64], out[64];
+    for (int i = 0; i < 64; ++i) {
+        k[i] = NAN;
+        v[i] = 1.f;
+        q[i] = 0.5f;
+    }
+    adaptq_append(h, k, v, 0);
+    int n = adaptq_compute(h, q, out);
+    REQUIRE(n == 1);
+    for (int i = 0; i < 64; ++i) {
+        REQUIRE(std::isfinite(out[i]));
+    }
+    adaptq_destroy(h);
+}
+

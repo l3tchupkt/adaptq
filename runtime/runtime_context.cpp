@@ -372,8 +372,13 @@ ComputeMetrics RuntimeContext::compute(int          layer,
         /* Softmax. */
         float sv = 0.f;
         for (int i = 0; i < n; ++i) { logits_[i] = expf(logits_[i] - mx); sv += logits_[i]; }
-        float inv_s = 1.f / sv;
-        for (int i = 0; i < n; ++i) logits_[i] *= inv_s;
+        if (sv > 0.f && std::isfinite(sv)) {
+            float inv_s = 1.f / sv;
+            for (int i = 0; i < n; ++i) logits_[i] *= inv_s;
+        } else {
+            float unif = 1.f / (float)n;
+            for (int i = 0; i < n; ++i) logits_[i] = unif;
+        }
 
         /* V accumulation. */
         v_acc_.assign(cfg_.dim, 0.f);

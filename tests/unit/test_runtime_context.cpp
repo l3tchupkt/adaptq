@@ -261,3 +261,44 @@ TEST_CASE("RuntimeContext: fp_passthrough records pre-softmax logit_max and logi
     REQUIRE(std::abs(m.logit_min - (-8.0f)) < 1e-4f);
 }
 
+TEST_CASE("RuntimeContext: softmax guard produces finite output with NaN keys", "[runtime][softmax-guard]") {
+    RuntimeContextConfig cfg = make_cfg(1, 1, 64, 4, 32);
+    RuntimeContext ctx;
+    StrategyFactory sfn = strategy_factory_by_name("fp_passthrough");
+    REQUIRE(sfn != nullptr);
+    ctx.init(cfg, sfn, []() -> IStorageBackend * {
+        return adaptq::make_contiguous();
+    });
+
+    std::vector<float> k(64, NAN), v(64, 1.f), q(64), out(64, 0.f);
+    rand_vec(q.data(), 64, 42);
+
+    ctx.append(0, 0, k.data(), v.data());
+    ComputeMetrics m = ctx.compute(0, 0, q.data(), out.data());
+
+    REQUIRE(m.n_tokens_used == 1);
+    for (float x : out) {
+        REQUIRE(std::isfinite(x));
+    }
+}
+
+TEST_CASE("RuntimeContext: softmax guard produces finite output with all-identical keys", "[runtime][softmax-guard]") {
+    RuntimeContextConfig cfg = make_cfg(1, 1, 64, 4, 32);
+    RuntimeContext ctx;
+    StrategyFactory sfn = strategy_factory_by_name("fp_passthrough");
+    REQUIRE(sfn != nullptr);
+    ctx.init(cfg, sfn, []() -> IStorageBackend * {
+        return adaptq::make_contiguous();
+    });
+
+    std::vector<float> k(64, 0.f), v(64, 1.f), q(64, 0.f), out(64, 0.f);
+    for (int t = 0; t < 4; ++t)
+        ctx.append(0, 0, k.data(), v.data());
+
+    ComputeMetrics m = ctx.compute(0, 0, q.data(), out.data());
+    REQUIRE(m.n_tokens_used == 4);
+    for (float x : out) {
+        REQUIRE(std::isfinite(x));
+    }
+}
+
