@@ -171,7 +171,9 @@ class IRuntimeAdapter(ABC):
             generated = []
             for _ in range(max_new_tokens):
                 tok = self.decode_next()
-                if tok is None:
+                # eos_token_id covers stop tokens the backend's tokenizer doesn't
+                # treat as EOS, e.g. a chat model's end-of-turn token.
+                if tok is None or tok == cfg.eos_token_id:
                     break
                 generated.append(tok)
                 if on_token:
@@ -247,7 +249,9 @@ class IRuntimeAdapter(ABC):
 
             for _ in range(max_new_tokens):
                 tok = self.decode_next()
-                if tok is None:
+                # eos_token_id covers stop tokens the backend's tokenizer doesn't
+                # treat as EOS, e.g. a chat model's end-of-turn token.
+                if tok is None or tok == cfg.eos_token_id:
                     break
                 generated.append(tok)
                 try:

@@ -191,6 +191,21 @@ class TestBaseStreaming(unittest.TestCase):
         self.assertEqual(res_stored.n_generated_tokens, 4)
         self.assertEqual(res_stored.text, "Hello world!")
 
+    def test_session_eos_token_id_stops_generate(self):
+        adapter = DummyAdapter(tokens_to_emit=[1, 2, 3, 4, 1])
+        cfg = SessionConfig(eos_token_id=3)
+        result = adapter.generate("Hello", max_new_tokens=10, session_cfg=cfg)
+        self.assertEqual(result.token_ids, [1, 2])
+        self.assertEqual(result.text, "Hello ")
+
+    def test_session_eos_token_id_stops_streaming(self):
+        adapter = DummyAdapter(tokens_to_emit=[1, 2, 3, 4, 1])
+        cfg = SessionConfig(eos_token_id=3)
+        chunks = list(adapter.generate_streaming("Hello", max_new_tokens=10, session_cfg=cfg))
+        self.assertEqual(chunks, ["Hello", " "])
+        self.assertEqual(adapter.generation_result().n_generated_tokens, 2)
+        self.assertTrue(adapter.session_ended)
+
 
 if __name__ == "__main__":
     unittest.main()
