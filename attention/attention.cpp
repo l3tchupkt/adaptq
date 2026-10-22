@@ -424,9 +424,15 @@ static void compute_avx2(const float *qr, float *acc, const float *k_cb, const f
     logits[j] = expf(logits[j] - mx);
     sv += logits[j];
   }
-  float inv = 1.f / sv;
-  for (int j = 0; j < n; ++j)
-    logits[j] *= inv;
+  if (sv > 0.f && std::isfinite(sv)) {
+    float inv = 1.f / sv;
+    for (int j = 0; j < n; ++j)
+      logits[j] *= inv;
+  } else {
+    float unif = 1.f / (float)n;
+    for (int j = 0; j < n; ++j)
+      logits[j] = unif;
+  }
 
   memset(acc, 0, padded * sizeof(float));
 
@@ -576,8 +582,13 @@ int AttentionHead::compute(const float *q, float *out) const {
       logits[i] = expf(logits[i] - mx);
       sv += logits[i];
     }
-    float inv = 1.f / sv;
-    for (int i = 0; i < n; ++i) logits[i] *= inv;
+    if (sv > 0.f && std::isfinite(sv)) {
+      float inv = 1.f / sv;
+      for (int i = 0; i < n; ++i) logits[i] *= inv;
+    } else {
+      float unif = 1.f / (float)n;
+      for (int i = 0; i < n; ++i) logits[i] = unif;
+    }
     
     memset(acc, 0, padded * sizeof(float));
     for (int i = 0; i < n; ++i) {
