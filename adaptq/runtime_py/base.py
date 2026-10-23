@@ -9,6 +9,7 @@ are implemented here in terms of those primitives.
 """
 from __future__ import annotations
 
+import dataclasses
 import time
 from abc import ABC, abstractmethod
 from typing import Callable, Iterator, List, Optional
@@ -114,11 +115,35 @@ class IRuntimeAdapter(ABC):
     # Convenience: high-level generation pipeline                          #
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _session_config(
+        prompt: str,
+        max_new_tokens: Optional[int],
+        session_cfg: Optional[SessionConfig],
+    ) -> SessionConfig:
+        """
+        Build the SessionConfig for one generation call.
+
+        An explicit max_new_tokens wins; otherwise session_cfg's own value is
+        used (128 when there is no session_cfg). The caller's SessionConfig is
+        copied, never modified.
+        """
+        if session_cfg is None:
+            return SessionConfig(
+                prompt=prompt,
+                max_new_tokens=128 if max_new_tokens is None else max_new_tokens,
+                log_tokens=True,
+            )
+        cfg = dataclasses.replace(session_cfg, prompt=prompt)
+        if max_new_tokens is not None:
+            cfg.max_new_tokens = max_new_tokens
+        return cfg
+
     def generate(
         self,
         prompt: str,
         *,
-        max_new_tokens: int = 128,
+        max_new_tokens: Optional[int] = None,
         session_cfg: Optional[SessionConfig] = None,
         on_token: Optional[Callable[[int], None]] = None,
     ) -> GenerationResult:
@@ -130,20 +155,16 @@ class IRuntimeAdapter(ABC):
 
         Args:
             prompt: Input text.
-            max_new_tokens: Maximum tokens to generate.
+            max_new_tokens: Maximum tokens to generate. Defaults to
+                session_cfg.max_new_tokens, or 128 without a session_cfg.
             session_cfg: Override session configuration.
             on_token: Optional callback called with each generated token ID.
 
         Returns:
             GenerationResult with text, timing, and KV stats.
         """
-        cfg = session_cfg or SessionConfig(
-            prompt=prompt,
-            max_new_tokens=max_new_tokens,
-            log_tokens=True,
-        )
-        cfg.prompt = prompt
-        cfg.max_new_tokens = max_new_tokens
+        cfg = self._session_config(prompt, max_new_tokens, session_cfg)
+        max_new_tokens = cfg.max_new_tokens
 
         result = GenerationResult()
         self._last_result = result
@@ -202,7 +223,7 @@ class IRuntimeAdapter(ABC):
         self,
         prompt: str,
         *,
-        max_new_tokens: int = 128,
+        max_new_tokens: Optional[int] = None,
         session_cfg: Optional[SessionConfig] = None,
     ) -> Iterator[str]:
         """
@@ -215,13 +236,8 @@ class IRuntimeAdapter(ABC):
             res = adapter.generation_result()
             print(res.summary())
         """
-        cfg = session_cfg or SessionConfig(
-            prompt=prompt,
-            max_new_tokens=max_new_tokens,
-            log_tokens=True,
-        )
-        cfg.prompt = prompt
-        cfg.max_new_tokens = max_new_tokens
+        cfg = self._session_config(prompt, max_new_tokens, session_cfg)
+        max_new_tokens = cfg.max_new_tokens
 
         result = GenerationResult()
         self._last_result = result
