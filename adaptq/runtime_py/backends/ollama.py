@@ -155,13 +155,14 @@ class OllamaAdapter(IRuntimeAdapter):
         # Use generate() directly instead.
         return None
 
-    def generate(self, prompt: str, *, max_new_tokens: int = 128,
+    def generate(self, prompt: str, *, max_new_tokens: Optional[int] = None,
                  session_cfg: Optional[SessionConfig] = None, **kwargs) -> GenerationResult:
         """
         Full generation via Ollama REST API.
         Overrides base generate() to use the /api/generate endpoint directly.
         """
-        cfg = session_cfg or SessionConfig(prompt=prompt, max_new_tokens=max_new_tokens)
+        cfg = self._session_config(prompt, max_new_tokens, session_cfg)
+        max_new_tokens = cfg.max_new_tokens
         result = GenerationResult()
         t0 = time.perf_counter()
 
@@ -233,7 +234,7 @@ class OllamaAdapter(IRuntimeAdapter):
         self,
         prompt: str,
         *,
-        max_new_tokens: int = 128,
+        max_new_tokens: Optional[int] = None,
         session_cfg: Optional[SessionConfig] = None,
     ) -> Generator[str, None, None]:
         """
@@ -259,13 +260,15 @@ class OllamaAdapter(IRuntimeAdapter):
 
         Args:
             prompt: Input text prompt.
-            max_new_tokens: Maximum number of tokens to generate.
+            max_new_tokens: Maximum number of tokens to generate. Defaults to
+                ``session_cfg.max_new_tokens``, or 128 without a session_cfg.
             session_cfg: Optional :class:`SessionConfig` override.
 
         Yields:
             str: Text fragments as they are streamed from Ollama.
         """
-        cfg = session_cfg or SessionConfig(prompt=prompt, max_new_tokens=max_new_tokens)
+        cfg = self._session_config(prompt, max_new_tokens, session_cfg)
+        max_new_tokens = cfg.max_new_tokens
         result = GenerationResult()
         t0 = time.perf_counter()
 

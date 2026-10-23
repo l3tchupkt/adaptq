@@ -191,6 +191,29 @@ class TestBaseStreaming(unittest.TestCase):
         self.assertEqual(res_stored.n_generated_tokens, 4)
         self.assertEqual(res_stored.text, "Hello world!")
 
+    def test_generate_uses_session_cfg_max_new_tokens(self):
+        adapter = DummyAdapter()
+        result = adapter.generate("Hello", session_cfg=SessionConfig(max_new_tokens=2))
+        self.assertEqual(result.token_ids, [1, 2])
+
+    def test_streaming_uses_session_cfg_max_new_tokens(self):
+        adapter = DummyAdapter()
+        chunks = list(adapter.generate_streaming("Hello", session_cfg=SessionConfig(max_new_tokens=3)))
+        self.assertEqual(chunks, ["Hello", " ", "world"])
+
+    def test_explicit_max_new_tokens_overrides_session_cfg(self):
+        adapter = DummyAdapter()
+        result = adapter.generate("Hello", max_new_tokens=1, session_cfg=SessionConfig(max_new_tokens=3))
+        self.assertEqual(result.token_ids, [1])
+
+    def test_generate_does_not_modify_callers_session_cfg(self):
+        adapter = DummyAdapter()
+        cfg = SessionConfig(prompt="original", max_new_tokens=3)
+        adapter.generate("Hello", max_new_tokens=1, session_cfg=cfg)
+        list(adapter.generate_streaming("Hi", max_new_tokens=2, session_cfg=cfg))
+        self.assertEqual(cfg.prompt, "original")
+        self.assertEqual(cfg.max_new_tokens, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

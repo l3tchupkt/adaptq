@@ -160,6 +160,16 @@ class TestOllamaGenerateStreaming(unittest.TestCase):
         self.assertEqual(payload["options"]["num_predict"], 5)
 
     @patch("adaptq.runtime_py.backends.ollama.requests")
+    def test_session_cfg_max_new_tokens_used_when_not_passed(self, mock_requests):
+        mock_requests.post.return_value = _mock_streaming_response(
+            _make_ndjson_lines("ok", eval_count=1, prompt_eval_count=1)
+        )
+        cfg = SessionConfig(max_new_tokens=7)
+        list(self.adapter.generate_streaming("Real prompt", session_cfg=cfg))
+        payload = mock_requests.post.call_args[1]["json"]
+        self.assertEqual(payload["options"]["num_predict"], 7)
+
+    @patch("adaptq.runtime_py.backends.ollama.requests")
     def test_chunks_without_response_key_not_yielded(self, mock_requests):
         lines = [
             json.dumps({"status": "loading", "done": False}).encode(),
