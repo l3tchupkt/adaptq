@@ -139,6 +139,23 @@ class TestOllamaGenerateStreaming(unittest.TestCase):
         stats = self.adapter.get_kv_stats()
         self.assertIsInstance(stats, KVStats)
         self.assertEqual(stats.n_tokens_cached, 10)
+        # Ollama does not expose KV state; byte fields must stay unknown
+        # rather than be derived from invented layer and head counts.
+        self.assertEqual(stats.kv_bytes_fp16, 0)
+        self.assertEqual(stats.kv_bytes_adaptq, 0)
+        self.assertEqual(stats.compression_ratio, 0.0)
+
+    @patch("adaptq.runtime_py.backends.ollama.requests")
+    def test_generate_reports_no_fabricated_kv_bytes(self, mock_requests):
+        mock_requests.post.return_value = _mock_streaming_response(
+            _make_ndjson_lines("hello", eval_count=6, prompt_eval_count=2)
+        )
+        res = self.adapter.generate("Prompt")
+        self.assertEqual(res.n_generated_tokens, 6)
+        self.assertEqual(res.kv_stats.n_tokens_cached, 6)
+        self.assertEqual(res.kv_stats.kv_bytes_fp16, 0)
+        self.assertEqual(res.kv_stats.kv_bytes_adaptq, 0)
+        self.assertEqual(res.kv_stats.compression_ratio, 0.0)
 
     @patch("adaptq.runtime_py.backends.ollama.requests")
     def test_http_error_sets_result_error_field(self, mock_requests):

@@ -214,12 +214,10 @@ class OllamaAdapter(IRuntimeAdapter):
             result.wall_time_ms        = (t1 - t0) * 1000.0
             if result.wall_time_ms > 0:
                 result.tokens_per_sec  = eval_count / (result.wall_time_ms / 1000.0)
-            # KV stats: approximation (no actual KV access)
-            result.kv_stats = KVStats(
-                kv_bytes_fp16=eval_count * 32 * 128 * 2 * 2,  # placeholder
-                kv_bytes_adaptq=0,
-                n_tokens_cached=eval_count,
-            )
+            # Ollama does not expose KV state (metadata sets kv_access=False),
+            # so byte counts cannot be measured. Report only the token count
+            # instead of deriving bytes from invented model dimensions.
+            result.kv_stats = self._unavailable_kv_stats(eval_count)
 
         except Exception as e:
             result.error = str(e)
@@ -320,11 +318,7 @@ class OllamaAdapter(IRuntimeAdapter):
             result.wall_time_ms = (t1 - t0) * 1000.0
             if result.wall_time_ms > 0:
                 result.tokens_per_sec = eval_count / (result.wall_time_ms / 1000.0)
-            result.kv_stats = KVStats(
-                kv_bytes_fp16=eval_count * 32 * 128 * 2 * 2,  # placeholder
-                kv_bytes_adaptq=0,
-                n_tokens_cached=eval_count,
-            )
+            result.kv_stats = self._unavailable_kv_stats(eval_count)
 
         except Exception as e:
             result.error = str(e)
@@ -332,6 +326,21 @@ class OllamaAdapter(IRuntimeAdapter):
             self.end_session()
 
         self._last_result = result
+
+    @staticmethod
+    def _unavailable_kv_stats(n_tokens: int) -> KVStats:
+        """Return stats for a backend that does not expose KV state.
+
+        Ollama reports token counts but not KV bytes. Leaving the byte fields
+        at zero makes the absence explicit; inventing layer and head counts
+        would produce a compression ratio that does not describe any real
+        cache.
+        """
+        return KVStats(
+            kv_bytes_fp16=0,
+            kv_bytes_adaptq=0,
+            n_tokens_cached=n_tokens,
+        )
 
     def get_kv_stats(self) -> KVStats:
         return self._last_result.kv_stats if self._last_result else KVStats()
