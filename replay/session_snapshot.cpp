@@ -136,28 +136,46 @@ SessionSnapshot SessionSnapshot::capture(const RuntimeContext &ctx,
                     "' does not support snapshot capture");
             }
 
-            int cache_sz   = csb->size() / 2;  /* size() = K+V slots; pairs = size/2 */
-            int slot_bytes = csb->slot_bytes();
+            const int k_size = csb->k_size();
+            const int v_size = csb->v_size();
+            if (k_size != v_size) {
+                throw std::runtime_error(
+                    "SessionSnapshot::capture: K/V slot counts diverged (" +
+                    std::to_string(k_size) + " vs " + std::to_string(v_size) + ")");
+            }
+
+            const int cache_sz  = k_size;
+            const int slot_bytes = csb->slot_bytes();
+            const int role_cap  = csb->role_capacity();
             hs.cache_size  = cache_sz;
             hs.slot_bytes  = slot_bytes;
 
-            /* Copy raw slab data: K slots [0 … cache_sz), V slots [cache_sz … 2*cache_sz) */
-            size_t total_bytes = (size_t)(cache_sz * 2) * slot_bytes;
-            hs.storage_data.resize(total_bytes);
-            if (total_bytes > 0)
-                memcpy(hs.storage_data.data(), csb->raw_data(), total_bytes);
+            /* The slab physically stores K in [0, cache_sz) and V in
+             * [role_cap, role_cap + cache_sz). The role offset is not the
+             * used slot count, so only when the cache is full does
+             * role_cap == cache_sz. Copy each role separately so the
+             * snapshot keeps the documented K-then-V layout. */
+            const size_t role_bytes = (size_t)cache_sz * slot_bytes;
+            hs.storage_data.resize(role_bytes * 2);
+            if (role_bytes > 0) {
+                memcpy(hs.storage_data.data(), csb->raw_data(), role_bytes);
+                memcpy(hs.storage_data.data() + role_bytes,
+                       csb->raw_data() + (size_t)role_cap * slot_bytes,
+                       role_bytes);
+            }
 
-            /* Copy scales and format_tags for K and V. */
+            /* Scales and format tags are indexed by physical slot, so gather
+             * each role using the same offsets as the data copy. */
             hs.scales.resize(cache_sz * 2);
             hs.format_tags.resize(cache_sz * 2);
             const float *sc = csb->scales();
-            if (sc && cache_sz > 0) {
-                memcpy(hs.scales.data(), sc, (size_t)(cache_sz * 2) * sizeof(float));
-            }
-            /* format_tags are per-slot — read via CompressResult. */
-            for (int i = 0; i < cache_sz * 2; ++i) {
-                CompressResult r = st->read((StorageSlot)i);
-                hs.format_tags[i] = r.format_tag;
+            for (int i = 0; i < cache_sz; ++i) {
+                if (sc) {
+                    hs.scales[i]            = sc[i];
+                    hs.scales[cache_sz + i] = sc[role_cap + i];
+                }
+                hs.format_tags[i]            = st->read((StorageSlot)i).format_tag;
+                hs.format_tags[cache_sz + i] = st->read((StorageSlot)(role_cap + i)).format_tag;
             }
 
             /* Capture strategy state if IReplayHooks is implemented. */

@@ -15,6 +15,7 @@
 
 #include "../../runtime/runtime_context.h"
 #include "../../replay/session_snapshot.h"
+#include "../../storage/contiguous_slab.h"
 
 using namespace adaptq;
 namespace fs = std::filesystem;
@@ -195,6 +196,43 @@ TEST_CASE("SessionSnapshot: head snapshot has valid storage data", "[snapshot]")
     /* storage_data should hold K and V slots: 4 pairs × 2 × slot_bytes. */
     size_t expected = (size_t)(hs.cache_size * 2) * hs.slot_bytes;
     REQUIRE(hs.storage_data.size() == expected);
+}
+
+TEST_CASE("SessionSnapshot: captures V slots from the split half of the slab", "[snapshot]") {
+    auto ctx = make_ctx_with_tokens(4, 64, false);
+    auto *slab = dynamic_cast<ContiguousSlabStorage *>(ctx->get_storage(0, 0));
+    REQUIRE(slab != nullptr);
+    REQUIRE(slab->k_size() == 4);
+    REQUIRE(slab->v_size() == 4);
+
+    const int role_cap = slab->role_capacity();
+    /* The cache is deliberately not full: V therefore starts at role_cap,
+     * not immediately after the four used K slots. */
+    REQUIRE(role_cap > 4);
+
+    SessionSnapshot snap = SessionSnapshot::capture(*ctx, false);
+    REQUIRE(snap.heads().size() == 1u);
+    const HeadSnapshot &hs = snap.heads()[0];
+
+    const size_t role_bytes = (size_t)4 * hs.slot_bytes;
+
+    /* K occupies the first half of the snapshot payload. */
+    REQUIRE(std::memcmp(hs.storage_data.data(),
+                        slab->raw_data(),
+                        role_bytes) == 0);
+
+    /* V must be read from [role_cap, role_cap + 4), not [4, 8). */
+    REQUIRE(std::memcmp(hs.storage_data.data() + role_bytes,
+                        slab->raw_data() + (size_t)role_cap * hs.slot_bytes,
+                        role_bytes) == 0);
+
+    for (int i = 0; i < 4; ++i) {
+        REQUIRE(hs.format_tags[i] == slab->read((StorageSlot)i).format_tag);
+        REQUIRE(hs.format_tags[4 + i] ==
+                slab->read((StorageSlot)(role_cap + i)).format_tag);
+        REQUIRE(hs.scales[i] == slab->scales()[i]);
+        REQUIRE(hs.scales[4 + i] == slab->scales()[role_cap + i]);
+    }
 }
 
 TEST_CASE("SessionSnapshot: save/load is deterministic for same input", "[snapshot]") {

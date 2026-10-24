@@ -82,11 +82,17 @@ public:
     uint8_t *raw_data()          { return data_;       }
     const float *scales()  const { return scale_.data(); }
 
-private:
+    /* Logical K/V layout. The slab is physically split in half: K occupies
+     * slots [0, role_capacity()) and V occupies [role_capacity(), capacity()).
+     * K and V can fill independently, so sizes are reported per role. */
     int role_capacity() const {
         /* Runtime KV storage is allocated as 2 * logical capacity. */
         return capacity_ / 2;
     }
+    int k_size() const { return k_size_; }
+    int v_size() const { return v_size_; }
+
+private:
 
     StorageSlot write_role(const uint8_t *data, int data_bytes,
                            float scale, uint8_t format_tag,
