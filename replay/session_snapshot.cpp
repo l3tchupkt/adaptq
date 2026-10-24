@@ -332,6 +332,21 @@ SessionSnapshot SessionSnapshot::load(const std::string &path) {
         if (hs.layer < 0 || hs.layer >= snap.n_layers_ ||
             hs.head < 0 || hs.head >= snap.n_heads_)
             throw std::runtime_error("SessionSnapshot::load: invalid head coordinates");
+
+        /* Capture writes one entry per (layer, head) in row-major order, and
+         * ReplayEngine::branch restores strategy state by that same position.
+         * Duplicated or reordered coordinates would therefore silently apply
+         * one head's state to another, so require the canonical layout rather
+         * than only per-entry range checks. */
+        const int expected_layer = i / snap.n_heads_;
+        const int expected_head  = i % snap.n_heads_;
+        if (hs.layer != expected_layer || hs.head != expected_head)
+            throw std::runtime_error(
+                "SessionSnapshot::load: head entry " + std::to_string(i) +
+                " has coordinates (" + std::to_string(hs.layer) + ", " +
+                std::to_string(hs.head) + "), expected (" +
+                std::to_string(expected_layer) + ", " +
+                std::to_string(expected_head) + ")");
         if (hs.cache_size < 0 || hs.slot_bytes < 0)
             throw std::runtime_error("SessionSnapshot::load: invalid head storage dimensions");
         if (hs.cache_size > std::numeric_limits<int32_t>::max() / 2)

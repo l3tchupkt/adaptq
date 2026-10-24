@@ -146,6 +146,86 @@ TEST_CASE("SessionSnapshot: save and load roundtrip", "[snapshot]") {
     fs::remove(path);
 }
 
+/* Write a minimal, structurally valid snapshot with the given head coordinates.
+ * Each head carries one empty cache slot and two scales/tags, which keeps the
+ * per-head record above the loader's minimum block size. */
+static void write_minimal_snapshot(
+        const std::string &path,
+        const std::vector<std::pair<int, int>> &coords,
+        int n_layers = 2, int n_heads = 2) {
+    std::ofstream f(path, std::ios::binary);
+    auto w32 = [&](uint32_t v) {
+        f.write(reinterpret_cast<const char *>(&v), sizeof(v));
+    };
+    auto wi32 = [&](int32_t v) {
+        f.write(reinterpret_cast<const char *>(&v), sizeof(v));
+    };
+    auto w64 = [&](uint64_t v) {
+        f.write(reinterpret_cast<const char *>(&v), sizeof(v));
+    };
+
+    w32(SessionSnapshot::kMagic);
+    w32(SessionSnapshot::kVersion);
+    wi32(n_layers);
+    wi32(n_heads);
+    wi32(8);                                  /* dim  */
+    wi32(4);                                  /* bits */
+    wi32(0);                                  /* n_tokens */
+    wi32(static_cast<int32_t>(coords.size()));/* n_heads_total */
+    w64(0);                                   /* flags */
+
+    for (const auto &[layer, head] : coords) {
+        wi32(layer);
+        wi32(head);
+        wi32(1);      /* cache_size (one pair) */
+        wi32(0);      /* slot_bytes            */
+        w64(0);       /* data_bytes            */
+        wi32(2);      /* n_scales = cache_size * 2 */
+        const float scales[2] = {1.f, 1.f};
+        f.write(reinterpret_cast<const char *>(scales), sizeof(scales));
+        wi32(2);      /* n_tags = cache_size * 2 */
+        const char tags[2] = {0, 0};
+        f.write(tags, sizeof(tags));
+    }
+}
+
+TEST_CASE("SessionSnapshot: load rejects duplicated or reordered head coordinates",
+          "[snapshot][security]") {
+    std::string path = tmp_path("adaptq_head_coords.aqss");
+    const std::vector<std::pair<int, int>> canonical = {{0, 0}, {0, 1}, {1, 0}, {1, 1}};
+
+    write_minimal_snapshot(path, canonical);
+    SessionSnapshot loaded;
+    REQUIRE_NOTHROW(loaded = SessionSnapshot::load(path));
+    REQUIRE(loaded.heads().size() == canonical.size());
+    for (size_t i = 0; i < canonical.size(); ++i) {
+        REQUIRE(loaded.heads()[i].layer == canonical[i].first);
+        REQUIRE(loaded.heads()[i].head == canonical[i].second);
+    }
+
+    /* Duplicate the first head in the second slot: (0, 0) appears twice and
+     * (0, 1) is missing. */
+    auto duplicated = canonical;
+    duplicated[1] = {0, 0};
+    write_minimal_snapshot(path, duplicated);
+    bool rejected = false;
+    try {
+        SessionSnapshot::load(path);
+    } catch (const std::runtime_error &e) {
+        rejected = true;
+        REQUIRE(std::string(e.what()).find("expected (0, 1)") != std::string::npos);
+    }
+    REQUIRE(rejected);
+
+    /* Reordered but complete: the first two heads are swapped. */
+    auto reordered = canonical;
+    std::swap(reordered[0], reordered[1]);
+    write_minimal_snapshot(path, reordered);
+    REQUIRE_THROWS_AS(SessionSnapshot::load(path), std::runtime_error);
+
+    fs::remove(path);
+}
+
 TEST_CASE("SessionSnapshot: load rejects bad magic", "[snapshot]") {
     std::string path = tmp_path("adaptq_bad_magic.aqss");
     {
