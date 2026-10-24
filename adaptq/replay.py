@@ -423,8 +423,24 @@ def snapshot_info(path: Union[str, Path]) -> dict:
             f"snapshot_info: snapshot version {version} > current version "
             f"{_SNAPSHOT_VERSION}"
         )
-    if any(value < 0 for value in (n_layers, n_heads, dim, n_tokens, n_heads_total)):
-        raise RuntimeError("snapshot_info: invalid negative value in snapshot header")
+    if n_layers <= 0 or n_heads <= 0 or dim <= 0:
+        raise RuntimeError(
+            "snapshot_info: n_layers, n_heads, and dim must be positive"
+        )
+    if bits < 2 or bits > 4:
+        raise RuntimeError(
+            "snapshot_info: invalid bits (must be 2, 3, or 4)"
+        )
+    if n_tokens < 0:
+        raise RuntimeError("snapshot_info: invalid negative n_tokens")
+    if n_heads_total < 0:
+        raise RuntimeError("snapshot_info: invalid negative n_heads_total")
+    if n_heads_total != n_layers * n_heads:
+        raise RuntimeError(
+            "snapshot_info: inconsistent head count "
+            f"(n_heads_total={n_heads_total}, "
+            f"n_layers * n_heads={n_layers * n_heads})"
+        )
 
     file_size = snapshot_path.stat().st_size
 

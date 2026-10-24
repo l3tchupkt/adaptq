@@ -169,6 +169,41 @@ def test_snapshot_info_rejects_invalid_magic(tmp_path):
         replay_api.snapshot_info(snapshot)
 
 
+@pytest.mark.parametrize(
+    "n_layers,n_heads,dim,bits,n_tokens,n_heads_total,match",
+    [
+        (0, 1, 64, 4, 1, 0, "must be positive"),
+        (1, 0, 64, 4, 1, 0, "must be positive"),
+        (1, 1, 0, 4, 1, 1, "must be positive"),
+        (1, 1, 64, 0, 1, 1, "invalid bits"),
+        (1, 1, 64, 5, 1, 1, "invalid bits"),
+        (1, 1, 64, 4, -1, 1, "negative n_tokens"),
+        (1, 1, 64, 4, 1, -1, "negative n_heads_total"),
+        (2, 4, 64, 4, 1, 7, "inconsistent head count"),
+    ],
+)
+def test_snapshot_info_rejects_structurally_impossible_header(
+    tmp_path, n_layers, n_heads, dim, bits, n_tokens, n_heads_total, match
+):
+    snapshot = tmp_path / "impossible.aqss"
+    header = struct.pack(
+        "<IIiiiiiiQ",
+        replay_api._SNAPSHOT_MAGIC,
+        replay_api._SNAPSHOT_VERSION,
+        n_layers,
+        n_heads,
+        dim,
+        bits,
+        n_tokens,
+        n_heads_total,
+        0,
+    )
+    snapshot.write_bytes(header)
+
+    with pytest.raises(RuntimeError, match=match):
+        replay_api.snapshot_info(snapshot)
+
+
 def test_snapshot_to_json_exports_json_and_file(tmp_path):
     snapshot = tmp_path / "session.aqss"
     header = struct.pack(
