@@ -426,6 +426,17 @@ SessionSnapshot SessionSnapshot::load(const std::string &path) {
     if (!f.good() && !f.eof())
         throw std::runtime_error("SessionSnapshot::load: read error for " + path);
 
+    /* save() writes exactly the declared sections, so any byte left after the
+     * last section means the file was appended to, concatenated with another
+     * file, or written by a format variant this loader does not understand.
+     * Silently ignoring it would let replay operate on a prefix of the real
+     * input while reporting a successful load. */
+    const uint64_t trailing = remaining_bytes(f, file_size);
+    if (trailing != 0)
+        throw std::runtime_error(
+            "SessionSnapshot::load: " + std::to_string(trailing) +
+            " trailing bytes after snapshot payload");
+
     return snap;
 }
 

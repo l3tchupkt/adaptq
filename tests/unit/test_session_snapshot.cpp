@@ -241,6 +241,33 @@ TEST_CASE("SessionSnapshot: load rejects malicious allocation sizes", "[snapshot
     fs::remove(path);
 }
 
+TEST_CASE("SessionSnapshot: load rejects trailing data after the payload", "[snapshot][security]") {
+    std::string path = tmp_path("adaptq_trailing.aqss");
+    auto ctx = make_ctx_with_tokens(3, 64, true);
+    SessionSnapshot orig = SessionSnapshot::capture(*ctx, true);
+    orig.save(path);
+
+    const auto payload_size = fs::file_size(path);
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::app);
+        const char junk[4] = {0x41, 0x51, 0x53, 0x53};
+        out.write(junk, sizeof(junk));
+    }
+    REQUIRE(fs::file_size(path) == payload_size + 4);
+
+    bool rejected = false;
+    try {
+        SessionSnapshot::load(path);
+    } catch (const std::runtime_error &e) {
+        rejected = true;
+        REQUIRE(std::string(e.what()).find("trailing bytes after snapshot payload") !=
+                std::string::npos);
+    }
+    REQUIRE(rejected);
+
+    fs::remove(path);
+}
+
 TEST_CASE("SessionSnapshot: load rejects truncated files safely", "[snapshot][security]") {
     std::string path = tmp_path("adaptq_truncated_2.aqss");
     auto ctx = make_ctx_with_tokens(5, 64, true);
