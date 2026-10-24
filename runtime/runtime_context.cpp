@@ -306,6 +306,13 @@ ComputeMetrics RuntimeContext::compute(int          layer,
     ExecutionContext ctx = make_ctx(layer, head);
 
     IKVStrategy  *strat = strategies_[idx].get();
+    if (policy_) {
+        /* The policy selects the strategy for every operation, not only for
+         * append. Using the default strategy here would decode the K/V data
+         * with a different codebook or rotation than the one that wrote it. */
+        IKVStrategy *ps = policy_->select_strategy(layer, head, ctx);
+        if (ps) strat = ps;
+    }
     IStorageBackend *st = storages_[idx].get();
 
     ComputeMetrics m{};

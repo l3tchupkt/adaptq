@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 /* Pull in RuntimeContext (which includes strategy/storage implementations). */
@@ -41,6 +42,22 @@ static void rand_vec(float *v, int d, unsigned seed = 42) {
     n = sqrtf(n + 1e-12f);
     for (int i = 0; i < d; ++i) v[i] /= n;
 }
+
+/* ---- Policy test double ------------------------------------------------ */
+
+struct FixedStrategyPolicy final : IPolicy {
+    IKVStrategy *strategy = nullptr;
+
+    void init(int, int, const RuntimeConfig &) override {}
+    IKVStrategy *select_strategy(int, int, const ExecutionContext &) override {
+        return strategy;
+    }
+    IStorageBackend *select_storage(int, int, const ExecutionContext &) override {
+        return nullptr;
+    }
+    void on_metrics(int, int, const ComputeMetrics &) override {}
+    const char *name() const override { return "fixed_strategy"; }
+};
 
 /* =========================================================================
  * Test cases
@@ -121,6 +138,54 @@ TEST_CASE("RuntimeContext: compute returns valid ComputeMetrics after append", "
     float norm = 0.f;
     for (float x : out) norm += x * x;
     REQUIRE(norm > 1e-12f);
+}
+
+TEST_CASE("RuntimeContext: compute honors the policy-selected strategy", "[runtime][policy]") {
+    RuntimeContextConfig cfg = make_cfg(1, 1, 64, 4, 32);
+    RuntimeContext ctx;
+    ctx.init(cfg);
+
+    std::vector<float> k(64), v(64), q(64);
+    rand_vec(q.data(), 64, 31);
+    for (int t = 0; t < 8; ++t) {
+        rand_vec(k.data(), 64, (unsigned)(t * 41 + 1));
+        rand_vec(v.data(), 64, (unsigned)(t * 41 + 2));
+        ctx.append(0, 0, k.data(), v.data());
+    }
+
+    std::vector<float> out_default(64, 0.f), out_policy(64, 0.f);
+    ComputeMetrics m0 = ctx.compute(0, 0, q.data(), out_default.data());
+    REQUIRE(m0.n_tokens_used == 8);
+
+    float norm = 0.f;
+    for (float x : out_default) norm += x * x;
+    REQUIRE(norm > 1e-12f);
+
+    /* Build a second HAR instance with a different Rademacher seed. The
+     * policy will select it for compute only, so the output must change if
+     * compute actually honours the policy. */
+    std::unique_ptr<IKVStrategy> alt(strategy_factory_by_name("har_fixed")());
+    REQUIRE(alt != nullptr);
+    HeadConfig hc;
+    hc.dim      = 64;
+    hc.bits     = 4;
+    hc.capacity = 32;
+    hc.seed     = 987654321ULL;
+    alt->init(hc);
+
+    FixedStrategyPolicy policy;
+    policy.strategy = alt.get();
+    ctx.set_policy(&policy);
+
+    ComputeMetrics m1 = ctx.compute(0, 0, q.data(), out_policy.data());
+    REQUIRE(m1.n_tokens_used == 8);
+
+    float diff = 0.f;
+    for (int i = 0; i < 64; ++i) {
+        float d = out_policy[i] - out_default[i];
+        diff += d * d;
+    }
+    REQUIRE(diff > 1e-9f);
 }
 
 TEST_CASE("RuntimeContext: compute on empty cache returns zero output", "[runtime]") {
