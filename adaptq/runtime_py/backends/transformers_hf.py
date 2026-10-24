@@ -72,8 +72,14 @@ class AdapTQCache(DynamicCache):
         adaptq_capacity: int = 4096,
         dense_mode: bool = False,
         use_pt_cache: bool = False,
-        device: torch.device = torch.device("cpu")
+        device: Optional["torch.device"] = None
     ):
+        if device is None:
+            if torch is None:
+                raise ImportError(
+                    "AdapTQCache requires torch to resolve the default device"
+                )
+            device = torch.device("cpu")
         super().__init__()
         self.n_layers    = n_layers
         self.n_heads     = n_heads
