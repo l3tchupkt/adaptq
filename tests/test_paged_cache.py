@@ -101,6 +101,64 @@ class TestPagedCache(unittest.TestCase):
         self.assertEqual(len(table.block_ids), 0)
         self.assertEqual(allocator.num_free_blocks, self.num_blocks)
 
+    def test_block_allocator_rejects_invalid_dimensions(self):
+        with self.assertRaises(ValueError):
+            BlockAllocator(4, self.block_size, 0, self.num_heads)
+        with self.assertRaises(ValueError):
+            BlockAllocator(4, self.block_size, -self.head_dim, self.num_heads)
+        with self.assertRaises(ValueError):
+            BlockAllocator(4, self.block_size, self.head_dim, 0)
+        with self.assertRaises(ValueError):
+            BlockAllocator(4, self.block_size, self.head_dim, -self.num_heads)
+
+    def test_append_token_rejects_mis_shaped_vectors(self):
+        block = PhysicalBlock(0, self.block_size, self.head_dim, self.num_heads)
+        valid = np.zeros((self.num_heads, self.head_dim), dtype=np.float32)
+
+        # A flat (head_dim,) vector broadcasts silently against (num_heads, head_dim)
+        flat = np.zeros((self.head_dim,), dtype=np.float32)
+        with self.assertRaises(ValueError):
+            block.append_token(flat, valid)
+        with self.assertRaises(ValueError):
+            block.append_token(valid, flat)
+
+        # Too few heads, too many heads, and a wrong trailing dimension
+        with self.assertRaises(ValueError):
+            block.append_token(np.zeros((self.num_heads - 1, self.head_dim), np.float32), valid)
+        with self.assertRaises(ValueError):
+            block.append_token(np.zeros((self.num_heads + 1, self.head_dim), np.float32), valid)
+        with self.assertRaises(ValueError):
+            block.append_token(np.zeros((self.num_heads, self.head_dim + 1), np.float32), valid)
+
+        # Rejected appends must not consume a slot or write data
+        self.assertEqual(block.num_tokens, 0)
+        self.assertTrue(np.all(block.k_cache == 0.0))
+
+        # The exact layout still succeeds and stores each head's vector separately
+        per_head = np.arange(self.num_heads, dtype=np.float32)[:, None] * np.ones(
+            (self.num_heads, self.head_dim), dtype=np.float32
+        )
+        idx = block.append_token(per_head, -per_head)
+        self.assertEqual(idx, 0)
+        self.assertEqual(block.num_tokens, 1)
+        np.testing.assert_array_equal(block.k_cache[0], per_head)
+        np.testing.assert_array_equal(block.v_cache[0], -per_head)
+
+    def test_copy_on_write_rejects_unallocated_block(self):
+        allocator = BlockAllocator(self.num_blocks, self.block_size, self.head_dim, self.num_heads)
+
+        with self.assertRaises(ValueError):
+            allocator.copy_on_write(0)
+        with self.assertRaises(ValueError):
+            allocator.copy_on_write(self.num_blocks)
+
+        # The pool must be untouched, so every block is handed out exactly once
+        first = allocator.allocate()
+        second = allocator.allocate()
+        self.assertEqual(first.block_id, 0)
+        self.assertEqual(second.block_id, 1)
+        self.assertIsNot(first, second)
+
     def test_copy_on_write_prefix_sharing(self):
         manager = PagedKVCacheManager(
             num_blocks=16,

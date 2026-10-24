@@ -16,6 +16,10 @@ class PhysicalBlock:
     Represents a fixed-size physical memory block holding K and V cache vectors.
     """
     def __init__(self, block_id: int, block_size: int, head_dim: int, num_heads: int):
+        if block_size <= 0 or head_dim <= 0 or num_heads <= 0:
+            raise ValueError(
+                "block_size, head_dim, and num_heads must be strictly positive"
+            )
         self.block_id = block_id
         self.block_size = block_size
         self.head_dim = head_dim
@@ -27,6 +31,28 @@ class PhysicalBlock:
         self.k_cache = np.zeros((block_size, num_heads, head_dim), dtype=np.float32)
         self.v_cache = np.zeros((block_size, num_heads, head_dim), dtype=np.float32)
 
+    def _validate_token(self, name: str, token: np.ndarray) -> np.ndarray:
+        """
+        Validate a single-token K or V vector against this block's layout.
+
+        NumPy broadcasts a (head_dim,) vector against (num_heads, head_dim)
+        storage, so an under-specified token would otherwise be written to every
+        head without any error.
+        """
+        token = np.asarray(token)
+        expected = (self.num_heads, self.head_dim)
+        if token.shape != expected:
+            raise ValueError(
+                f"PhysicalBlock {self.block_id}: {name} must have shape "
+                f"{expected}, got {token.shape}"
+            )
+        if not np.issubdtype(token.dtype, np.number):
+            raise TypeError(
+                f"PhysicalBlock {self.block_id}: {name} must be numeric, "
+                f"got dtype {token.dtype}"
+            )
+        return token
+
     @property
     def is_full(self) -> bool:
         return self.num_tokens >= self.block_size
@@ -34,6 +60,8 @@ class PhysicalBlock:
     def append_token(self, k: np.ndarray, v: np.ndarray) -> int:
         if self.is_full:
             raise RuntimeError(f"PhysicalBlock {self.block_id} is full ({self.block_size} tokens)")
+        k = self._validate_token("k", k)
+        v = self._validate_token("v", v)
         idx = self.num_tokens
         self.k_cache[idx] = k
         self.v_cache[idx] = v
@@ -61,6 +89,8 @@ class BlockAllocator:
     def __init__(self, num_blocks: int, block_size: int, head_dim: int, num_heads: int):
         if num_blocks <= 0 or block_size <= 0:
             raise ValueError("num_blocks and block_size must be strictly positive")
+        if head_dim <= 0 or num_heads <= 0:
+            raise ValueError("head_dim and num_heads must be strictly positive")
         self.num_blocks = num_blocks
         self.block_size = block_size
         self.head_dim = head_dim
@@ -106,6 +136,8 @@ class BlockAllocator:
         """
         Duplicate block if shared (ref_count > 1), returning private unshared block.
         """
+        if block_id not in self.allocated_block_ids:
+            raise ValueError(f"Cannot copy-on-write unallocated block {block_id}")
         block = self.blocks[block_id]
         if block.ref_count <= 1:
             return block
