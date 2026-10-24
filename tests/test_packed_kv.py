@@ -99,3 +99,25 @@ def test_cache_memory():
     # scale bytes: 40 vectors * 4 bytes = 160 bytes
     assert mb["scale_bytes"] == 160
     assert mb["padding_bytes"] == 0 # 128 is power of 2
+
+def test_cache_memory_with_uneven_layer_occupancy():
+    cache = PackedKVCache(bits=4, head_dim=32, n_kv_heads=2, n_layers=3)
+
+    # Layer 0 holds 1 token, layer 1 holds 3, layer 2 stays empty.
+    for layer, count in ((0, 1), (1, 3)):
+        for _ in range(count):
+            k = np.random.normal(0, 1, size=(2, 32)).astype(np.float32)
+            v = np.random.normal(0, 1, size=(2, 32)).astype(np.float32)
+            cache.append(layer=layer, k=k, v=v)
+
+    mb = cache.memory_bytes()
+
+    total_slots = (1 + 3 + 0) * 2          # (layer, head) entries
+    packed = (32 * 4 + 7) // 8             # bytes per K or V vector
+    assert mb["payload_bytes"] == total_slots * 2 * packed
+    assert mb["scale_bytes"] == total_slots * 2 * 4
+    assert mb["fp16_equivalent_bytes"] == total_slots * 32 * 2 * 2
+    assert mb["compression_ratio_vs_fp16"] == pytest.approx(
+        mb["fp16_equivalent_bytes"] / mb["total_bytes"]
+    )
+    assert mb["n_tokens"] == 3

@@ -548,6 +548,8 @@ class PackedKVCache:
         total_scale = 0
         total_meta = 0
         total_padding = 0
+        total_slots = 0
+        max_tokens = 0
 
         for c in self._caches.values():
             mb = c.memory_bytes()
@@ -555,12 +557,13 @@ class PackedKVCache:
             total_scale   += mb["scale_bytes"]
             total_meta    += mb["metadata_bytes"]
             total_padding += mb["padding_bytes"]
+            total_slots   += c.seq_len
+            max_tokens     = max(max_tokens, c.seq_len)
 
-        # FP16 equivalent: n_tokens × n_kv_heads × head_dim × 2 (K+V) × 2 bytes (FP16) × n_layers
-        n_tokens = self.sequence_length()
-        fp16_equiv = (
-            n_tokens * self.n_kv_heads * self.head_dim * 2 * 2 * self.n_layers
-        )
+        # FP16 equivalent uses the true per-head occupancy. Layers are allowed
+        # to hold different token counts, so a single layer-0 length cannot
+        # describe the whole cache.
+        fp16_equiv = total_slots * self.head_dim * 2 * 2
         total = total_payload + total_scale + total_meta
         ratio = (fp16_equiv / total) if total > 0 else 0.0
 
@@ -577,7 +580,7 @@ class PackedKVCache:
             "padded_dim":              self.padded_dim,
             "padding_overhead_pct":    (self.padded_dim - self.head_dim) / self.head_dim * 100,
             "bits":                    self.bits,
-            "n_tokens":                n_tokens,
+            "n_tokens":                max_tokens,
             "n_kv_heads":              self.n_kv_heads,
             "n_layers":                self.n_layers,
         }

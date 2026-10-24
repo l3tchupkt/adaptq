@@ -169,14 +169,20 @@ class PackedKVCachePT:
                 self.reset(l)
 
     def memory_bytes(self) -> dict:
-        n = self.sequence_length()
+        layer_lengths = [self.sequence_length(l) for l in range(self.n_layers)]
+        n = max(layer_lengths) if layer_lengths else 0
+        # Number of cached (layer, head, token) entries. Layers are allowed to
+        # hold different token counts, so this cannot be derived from a single
+        # layer length multiplied by n_layers.
+        total_slots = sum(layer_lengths) * self.n_kv_heads
+
         packed_bytes_per_token = (self.padded_dim * self.bits + 7) // 8
-        payload = n * 2 * packed_bytes_per_token * self.n_kv_heads * self.n_layers
-        scale = n * 2 * 4 * self.n_kv_heads * self.n_layers
+        payload = total_slots * 2 * packed_bytes_per_token
+        scale = total_slots * 2 * 4
         meta = self.padded_dim * 4 * self.n_kv_heads * self.n_layers
-        padding_bytes = (self.padded_dim - self.head_dim) * self.bits // 8 * n * 2 * self.n_kv_heads * self.n_layers
+        padding_bytes = (self.padded_dim - self.head_dim) * self.bits // 8 * total_slots * 2
         total = payload + scale + meta
-        fp16_equiv = n * self.n_kv_heads * self.head_dim * 2 * 2 * self.n_layers
+        fp16_equiv = total_slots * self.head_dim * 2 * 2
         
         return {
             "payload_bytes": payload,
