@@ -78,6 +78,11 @@ def dequantize_vector_pt(indices: torch.Tensor, scale: torch.Tensor, D: torch.Te
 
 class PackedKVCachePT:
     def __init__(self, bits: int, head_dim: int, n_kv_heads: int, n_layers: int, base_seed: int = 0xDEADBEEFCAFE, dense_ref: bool = False, device: torch.device = torch.device('cpu')):
+        if bits not in (2, 3, 4):
+            raise ValueError(f"bits must be 2, 3, or 4; got {bits}")
+        if head_dim <= 0 or n_kv_heads <= 0 or n_layers <= 0:
+            raise ValueError("head_dim, n_kv_heads, n_layers must be positive")
+
         self.bits = bits
         self.head_dim = head_dim
         self.padded_dim = _next_pow2(head_dim)
@@ -105,8 +110,28 @@ class PackedKVCachePT:
             self._dense_k = {l: [] for l in range(n_layers)}
             self._dense_v = {l: [] for l in range(n_layers)}
 
+    def _check_layer(self, layer: int) -> None:
+        if layer < 0 or layer >= self.n_layers:
+            raise ValueError(f"layer {layer} out of range [0, {self.n_layers})")
+
+    def _check_batch_tensor(self, name: str, x: torch.Tensor) -> None:
+        if not torch.is_tensor(x):
+            raise TypeError(f"{name} must be a torch.Tensor")
+        if x.dim() != 3 or x.shape[1:] != (self.n_kv_heads, self.head_dim):
+            raise ValueError(
+                f"{name} shape {tuple(x.shape)} != expected "
+                f"(seq_len, {self.n_kv_heads}, {self.head_dim})"
+            )
+
     def append_batch(self, layer: int, k: torch.Tensor, v: torch.Tensor) -> None:
         # k, v shape: (seq_len, n_kv_heads, head_dim)
+        self._check_layer(layer)
+        self._check_batch_tensor("k", k)
+        self._check_batch_tensor("v", v)
+        if k.size(0) != v.size(0):
+            raise ValueError(
+                f"k and v sequence lengths differ: {k.size(0)} vs {v.size(0)}"
+            )
         ki, ks = quantize_vector_pt(k, self.D[layer], self.bits, self.cb)
         vi, vs = quantize_vector_pt(v, self.D[layer], self.bits, self.cb)
         
@@ -120,6 +145,15 @@ class PackedKVCachePT:
             self._dense_v[layer].extend(list(v.cpu().numpy()))
 
     def append(self, layer: int, k: np.ndarray, v: np.ndarray) -> None:
+        self._check_layer(layer)
+        k = np.asarray(k)
+        v = np.asarray(v)
+        expected = (self.n_kv_heads, self.head_dim)
+        if k.shape != expected:
+            raise ValueError(f"k shape {k.shape} != expected {expected}")
+        if v.shape != expected:
+            raise ValueError(f"v shape {v.shape} != expected {expected}")
+
         k_pt = torch.from_numpy(k).to(self.device).float().unsqueeze(0) # (1, n_kv_heads, head_dim)
         v_pt = torch.from_numpy(v).to(self.device).float().unsqueeze(0)
         
@@ -136,6 +170,11 @@ class PackedKVCachePT:
             self._dense_v[layer].append(v.copy())
 
     def get(self, layer: int) -> Tuple[np.ndarray, np.ndarray]:
+        self._check_layer(layer)
+        if not self.k_indices[layer]:
+            empty = np.zeros((0, self.n_kv_heads, self.head_dim), dtype=np.float32)
+            return empty, empty.copy()
+
         ki = torch.cat(self.k_indices[layer], dim=0) # (seq_len, n_kv_heads, padded_dim)
         vi = torch.cat(self.v_indices[layer], dim=0)
         ks = torch.cat(self.k_scales[layer], dim=0)  # (seq_len, n_kv_heads)
@@ -147,16 +186,19 @@ class PackedKVCachePT:
         return k_recon.cpu().numpy(), v_recon.cpu().numpy()
 
     def get_dense_ref(self, layer: int):
+        self._check_layer(layer)
         if not self.dense_ref: return None, None
         if not self._dense_k[layer]: return None, None
         return np.stack(self._dense_k[layer], axis=0), np.stack(self._dense_v[layer], axis=0)
 
     def sequence_length(self, layer: int = 0) -> int:
+        self._check_layer(layer)
         if not self.k_indices[layer]: return 0
         return sum(t.size(0) for t in self.k_indices[layer])
 
     def reset(self, layer=None):
         if layer is not None:
+            self._check_layer(layer)
             self.k_indices[layer].clear()
             self.v_indices[layer].clear()
             self.k_scales[layer].clear()
