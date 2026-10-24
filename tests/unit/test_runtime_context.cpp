@@ -123,6 +123,29 @@ TEST_CASE("RuntimeContext: compute returns valid ComputeMetrics after append", "
     REQUIRE(norm > 1e-12f);
 }
 
+TEST_CASE("RuntimeContext: quantized compute reports pre-softmax logit extrema", "[runtime]") {
+    RuntimeContextConfig cfg = make_cfg(1, 1, 64, 4, 32);
+    RuntimeContext ctx;
+    ctx.init(cfg);
+
+    std::vector<float> k(64), v(64), q(64), out(64, 0.f);
+    rand_vec(q.data(), 64, 21);
+    for (int t = 0; t < 8; ++t) {
+        rand_vec(k.data(), 64, (unsigned)(t * 23 + 1));
+        rand_vec(v.data(), 64, (unsigned)(t * 23 + 2));
+        ctx.append(0, 0, k.data(), v.data());
+    }
+
+    ComputeMetrics m = ctx.compute(0, 0, q.data(), out.data());
+    REQUIRE(m.n_tokens_used == 8);
+
+    /* The quantized path must report the extrema of the pre-softmax
+     * logits. Before the fix both fields were hard-coded to zero. */
+    REQUIRE(std::isfinite(m.logit_max));
+    REQUIRE(std::isfinite(m.logit_min));
+    REQUIRE(m.logit_max > m.logit_min);
+}
+
 TEST_CASE("RuntimeContext: compute on empty cache returns zero output", "[runtime]") {
     RuntimeContextConfig cfg = make_cfg(1, 1, 64, 4, 32);
     RuntimeContext ctx;

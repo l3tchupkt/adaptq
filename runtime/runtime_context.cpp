@@ -394,14 +394,30 @@ ComputeMetrics RuntimeContext::compute(int          layer,
         HARFixedStrategy *har = dynamic_cast<HARFixedStrategy *>(strat);
         if (har) {
             har->compute_full(q_vec, out, ctx);
+
+            /* compute_full keeps the softmax weights in its thread-local
+             * workspace. Copy them into the runtime buffer so eviction
+             * feedback does not receive an empty or stale logits_ vector,
+             * and expose the pre-softmax extrema for metrics. */
+            const int w_count = har->last_attention_count();
+            const float *w = har->last_attention_weights();
+            if (w && w_count == n)
+                logits_.assign(w, w + n);
+            else
+                logits_.assign((size_t)n, 0.f);
+
+            m.logit_max = har->last_logit_max();
+            m.logit_min = har->last_logit_min();
+
             IQuality *q = har->quality();
             if (q) recent_quality_[idx] = q->estimated_quality();
         } else {
             /* Unknown quantized strategy: safe fallback → zero output. */
             memset(out, 0, cfg_.dim * sizeof(float));
+            logits_.assign((size_t)n, 0.f);
+            m.logit_max = 0.f;
+            m.logit_min = 0.f;
         }
-        m.logit_max = 0.f;
-        m.logit_min = 0.f;
     }
 
     /* ---- 5. AttentionFeedback → eviction ------------------------------- */

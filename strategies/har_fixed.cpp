@@ -232,12 +232,17 @@ public:
 
         /* 3. K-dot + softmax (scalar reference path) */
         float mx = -1e30f;
+        float mn =  1e30f;
         for (int i = 0; i < n; ++i) {
             CompressResult kr = ctx.storage->read((StorageSlot)slots[i]);
             float dot = kdot_ref(qr, kr.data, cb, padded, bits);
             logits[i] = dot * attn_s * kr.scale;
             if (logits[i] > mx) mx = logits[i];
+            if (logits[i] < mn) mn = logits[i];
         }
+        last_n_         = n;
+        last_logit_max_ = mx;
+        last_logit_min_ = mn;
         float sv = 0.f;
         for (int i = 0; i < n; ++i) {
             logits[i] = expf(logits[i] - mx);
@@ -288,8 +293,20 @@ public:
         return n;
     }
 
+    /* The runtime forwards these softmax weights to eviction feedback and
+     * reports the pre-softmax extrema in ComputeMetrics. The buffer is the
+     * per-thread workspace and is valid until the next compute_full() call
+     * on the same thread. */
+    const float *last_attention_weights() const { return tl_ws.logits.data(); }
+    int          last_attention_count()   const { return last_n_; }
+    float        last_logit_max()         const { return last_logit_max_; }
+    float        last_logit_min()         const { return last_logit_min_; }
+
 private:
     HeadConfig                  cfg_;
+    int                         last_n_         = 0;
+    float                       last_logit_max_ = 0.f;
+    float                       last_logit_min_ = 0.f;
     std::unique_ptr<Quantizer>  quant_;
     HARCompression              compress_;
     HARFIFOEviction             evict_;

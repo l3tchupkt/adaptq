@@ -17,26 +17,26 @@ static void fill_vec(float *v, int n, float val) {
 /* ---- Single head -------------------------------------------------------- */
 
 TEST_CASE("adaptq_create returns non-null handle", "[api]") {
-    adaptq_ctx_t h = adaptq_create(128, 4, 1024, 42, 0.f, 0);
+    adaptq_ctx_t h = adaptq_create(128, 4, 4, 1024, 42, 0.f, 0);
     REQUIRE(h != nullptr);
     adaptq_destroy(h);
 }
 
 TEST_CASE("adaptq_last_error is empty after successful create", "[api]") {
-    adaptq_ctx_t h = adaptq_create(64, 4, 512, 1, 0.f, 0);
+    adaptq_ctx_t h = adaptq_create(64, 4, 4, 512, 1, 0.f, 0);
     REQUIRE(h != nullptr);
     REQUIRE(std::string(adaptq_last_error()).empty());
     adaptq_destroy(h);
 }
 
 TEST_CASE("adaptq_kv_bytes is 0 before any append", "[api]") {
-    adaptq_ctx_t h = adaptq_create(128, 4, 1024, 1, 0.f, 0);
+    adaptq_ctx_t h = adaptq_create(128, 4, 4, 1024, 1, 0.f, 0);
     REQUIRE(adaptq_kv_bytes(h) == 0);
     adaptq_destroy(h);
 }
 
 TEST_CASE("adaptq_append increases kv_bytes", "[api]") {
-    adaptq_ctx_t h = adaptq_create(128, 4, 1024, 1, 0.f, 0);
+    adaptq_ctx_t h = adaptq_create(128, 4, 4, 1024, 1, 0.f, 0);
     float k[128] = {}, v[128] = {};
     fill_vec(k, 128, 0.5f); fill_vec(v, 128, 0.3f);
     adaptq_append(h, k, v, 0);
@@ -45,7 +45,7 @@ TEST_CASE("adaptq_append increases kv_bytes", "[api]") {
 }
 
 TEST_CASE("adaptq_compute returns active token count", "[api]") {
-    adaptq_ctx_t h = adaptq_create(128, 4, 1024, 1, 0.f, 0);
+    adaptq_ctx_t h = adaptq_create(128, 4, 4, 1024, 1, 0.f, 0);
     float k[128], v[128], q[128], out[128];
     fill_vec(k, 128, 0.1f); fill_vec(v, 128, 0.2f); fill_vec(q, 128, 0.5f);
     adaptq_append(h, k, v, 0);
@@ -56,7 +56,7 @@ TEST_CASE("adaptq_compute returns active token count", "[api]") {
 }
 
 TEST_CASE("adaptq_compute output is non-zero after append", "[api]") {
-    adaptq_ctx_t h = adaptq_create(128, 4, 1024, 1, 0.f, 0);
+    adaptq_ctx_t h = adaptq_create(128, 4, 4, 1024, 1, 0.f, 0);
     float k[128], v[128], q[128], out[128];
     for (int i = 0; i < 128; ++i) {
         k[i] = (float)i / 128.f;
@@ -72,7 +72,7 @@ TEST_CASE("adaptq_compute output is non-zero after append", "[api]") {
 }
 
 TEST_CASE("adaptq_compute on empty cache returns 0", "[api]") {
-    adaptq_ctx_t h = adaptq_create(128, 4, 1024, 1, 0.f, 0);
+    adaptq_ctx_t h = adaptq_create(128, 4, 4, 1024, 1, 0.f, 0);
     float q[128] = {}, out[128];
     int n = adaptq_compute(h, q, out);
     REQUIRE(n == 0);
@@ -80,7 +80,7 @@ TEST_CASE("adaptq_compute on empty cache returns 0", "[api]") {
 }
 
 TEST_CASE("adaptq_reset zeroes cache", "[api]") {
-    adaptq_ctx_t h = adaptq_create(128, 4, 1024, 1, 0.f, 0);
+    adaptq_ctx_t h = adaptq_create(128, 4, 4, 1024, 1, 0.f, 0);
     float k[128], v[128];
     fill_vec(k, 128, 1.f); fill_vec(v, 128, 1.f);
     adaptq_append(h, k, v, 0);
@@ -91,26 +91,26 @@ TEST_CASE("adaptq_reset zeroes cache", "[api]") {
 }
 
 TEST_CASE("adaptq_create with invalid parameters returns null", "[api][security]") {
-    REQUIRE(adaptq_create(0, 4, 1024, 42, 0.f, 0) == nullptr);
-    REQUIRE(adaptq_create(-1, 4, 1024, 42, 0.f, 0) == nullptr);
-    REQUIRE(adaptq_create(128, 0, 1024, 42, 0.f, 0) == nullptr);
-    REQUIRE(adaptq_create(128, 1, 1024, 42, 0.f, 0) == nullptr);
-    REQUIRE(adaptq_create(128, 5, 1024, 42, 0.f, 0) == nullptr);
-    REQUIRE(adaptq_create(128, 4, -1, 42, 0.f, 0) == nullptr);
-    REQUIRE(adaptq_create(128, 4, 1024, 42, 0.f, -100) == nullptr);
+    REQUIRE(adaptq_create(0, 4, 4, 1024, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(-1, 4, 4, 1024, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(128, 0, 0, 1024, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(128, 1, 1, 1024, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(128, 5, 5, 1024, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(128, 4, 4, -1, 42, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_create(128, 4, 4, 1024, 42, 0.f, -100) == nullptr);
     REQUIRE(std::string(adaptq_last_error()).size() > 0);
 }
 
 TEST_CASE("adaptq_create rejects unsupported quantization bit widths", "[api][security]") {
-    for (int bits : {1, 5, 6, 8, 16}) {
-        REQUIRE(adaptq_create(128, bits, 1024, 42, 0.f, 0) == nullptr);
+    for (int bits : {1, 5, 6, 8}) {
+        REQUIRE(adaptq_create(128, bits, bits, 1024, 42, 0.f, 0) == nullptr);
         REQUIRE(std::string(adaptq_last_error()).size() > 0);
     }
 }
 
 TEST_CASE("adaptq_create accepts all supported quantization bit widths", "[api]") {
     for (int bits : {2, 3, 4}) {
-        adaptq_ctx_t h = adaptq_create(128, bits, 1024, 42, 0.f, 0);
+        adaptq_ctx_t h = adaptq_create(128, bits, bits, 1024, 42, 0.f, 0);
         REQUIRE(h != nullptr);
         adaptq_destroy(h);
     }
@@ -125,7 +125,7 @@ TEST_CASE("single-head API rejects null handles and buffers without crashing", "
     REQUIRE(adaptq_compute(nullptr, nullptr, nullptr) == -1);
     REQUIRE(std::string(adaptq_last_error()).find("adaptq_compute: null handle") != std::string::npos);
 
-    adaptq_ctx_t h = adaptq_create(128, 4, 16, 1, 0.f, 0);
+    adaptq_ctx_t h = adaptq_create(128, 4, 4, 16, 1, 0.f, 0);
     REQUIRE(h != nullptr);
 
     adaptq_append(h, nullptr, v, 0);
@@ -160,13 +160,13 @@ TEST_CASE("single-head API rejects null handles and buffers without crashing", "
 /* ---- Multi-head -------------------------------------------------------- */
 
 TEST_CASE("adaptq_mha_create / destroy", "[api][mha]") {
-    adaptq_mha_t mha = adaptq_mha_create(8, 64, 4, 512, 0, 0.f, 0);
+    adaptq_mha_t mha = adaptq_mha_create(8, 64, 4, 4, 512, 0, 0.f, 0);
     REQUIRE(mha != nullptr);
     adaptq_mha_destroy(mha);
 }
 
 TEST_CASE("adaptq_mha_append + compute basic contract", "[api][mha]") {
-    adaptq_mha_t mha = adaptq_mha_create(4, 128, 4, 256, 7, 0.f, 0);
+    adaptq_mha_t mha = adaptq_mha_create(4, 128, 4, 4, 256, 7, 0.f, 0);
     float k[128], v[128], q[128], out[128];
     fill_vec(k, 128, 0.3f); fill_vec(v, 128, 0.7f); fill_vec(q, 128, 0.5f);
     for (int hi = 0; hi < 4; ++hi) adaptq_mha_append(mha, hi, k, v, 0);
@@ -178,7 +178,7 @@ TEST_CASE("adaptq_mha_append + compute basic contract", "[api][mha]") {
 }
 
 TEST_CASE("adaptq_mha_append: out-of-range head_idx sets error", "[api][mha]") {
-    adaptq_mha_t mha = adaptq_mha_create(4, 64, 4, 128, 0, 0.f, 0);
+    adaptq_mha_t mha = adaptq_mha_create(4, 64, 4, 4, 128, 0, 0.f, 0);
     float k[64], v[64];
     fill_vec(k, 64, 1.f); fill_vec(v, 64, 1.f);
     adaptq_mha_append(mha, 99, k, v, 0);
@@ -187,7 +187,7 @@ TEST_CASE("adaptq_mha_append: out-of-range head_idx sets error", "[api][mha]") {
 }
 
 TEST_CASE("adaptq_mha_compute: out-of-range head_idx returns -1", "[api][mha]") {
-    adaptq_mha_t mha = adaptq_mha_create(4, 64, 4, 128, 0, 0.f, 0);
+    adaptq_mha_t mha = adaptq_mha_create(4, 64, 4, 4, 128, 0, 0.f, 0);
     float q[64], out[64];
     int n = adaptq_mha_compute(mha, -1, q, out);
     REQUIRE(n == -1);
@@ -196,7 +196,7 @@ TEST_CASE("adaptq_mha_compute: out-of-range head_idx returns -1", "[api][mha]") 
 }
 
 TEST_CASE("adaptq_mha_reset clears all heads", "[api][mha]") {
-    adaptq_mha_t mha = adaptq_mha_create(4, 64, 4, 128, 0, 0.f, 0);
+    adaptq_mha_t mha = adaptq_mha_create(4, 64, 4, 4, 128, 0, 0.f, 0);
     float k[64], v[64];
     fill_vec(k, 64, 1.f); fill_vec(v, 64, 1.f);
     for (int hi = 0; hi < 4; ++hi) adaptq_mha_append(mha, hi, k, v, 0);
@@ -207,30 +207,30 @@ TEST_CASE("adaptq_mha_reset clears all heads", "[api][mha]") {
 }
 
 TEST_CASE("adaptq_mha_create with invalid parameters returns null", "[api][mha][security]") {
-    REQUIRE(adaptq_mha_create(0, 128, 4, 1024, 0, 0.f, 0) == nullptr);
-    REQUIRE(adaptq_mha_create(-1, 128, 4, 1024, 0, 0.f, 0) == nullptr);
-    REQUIRE(adaptq_mha_create(4, 0, 4, 1024, 0, 0.f, 0) == nullptr);
-    REQUIRE(adaptq_mha_create(4, 128, -1, 1024, 0, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_mha_create(0, 128, 4, 4, 1024, 0, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_mha_create(-1, 128, 4, 4, 1024, 0, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_mha_create(4, 0, 4, 4, 1024, 0, 0.f, 0) == nullptr);
+    REQUIRE(adaptq_mha_create(4, 128, -1, -1, 1024, 0, 0.f, 0) == nullptr);
     REQUIRE(std::string(adaptq_last_error()).size() > 0);
 }
 
 TEST_CASE("adaptq_mha_create rejects unsupported quantization bit widths", "[api][mha][security]") {
-    for (int bits : {1, 5, 6, 8, 16}) {
-        REQUIRE(adaptq_mha_create(4, 128, bits, 1024, 0, 0.f, 0) == nullptr);
+    for (int bits : {1, 5, 6, 8}) {
+        REQUIRE(adaptq_mha_create(4, 128, bits, bits, 1024, 0, 0.f, 0) == nullptr);
         REQUIRE(std::string(adaptq_last_error()).size() > 0);
     }
 }
 
 TEST_CASE("adaptq_mha_create accepts all supported quantization bit widths", "[api][mha]") {
     for (int bits : {2, 3, 4}) {
-        adaptq_mha_t mha = adaptq_mha_create(4, 128, bits, 1024, 0, 0.f, 0);
+        adaptq_mha_t mha = adaptq_mha_create(4, 128, bits, bits, 1024, 0, 0.f, 0);
         REQUIRE(mha != nullptr);
         adaptq_mha_destroy(mha);
     }
 }
 
 TEST_CASE("adaptq_mha_append: exact upper bound head_idx sets error", "[api][mha][security]") {
-    adaptq_mha_t mha = adaptq_mha_create(4, 64, 4, 128, 0, 0.f, 0);
+    adaptq_mha_t mha = adaptq_mha_create(4, 64, 4, 4, 128, 0, 0.f, 0);
     float k[64], v[64];
     adaptq_mha_append(mha, 4, k, v, 0); // 4 is out of bounds for size 4
     REQUIRE(std::string(adaptq_last_error()).size() > 0);
@@ -257,7 +257,7 @@ TEST_CASE("multi-head API rejects null handles and buffers without crashing", "[
 
     adaptq_mha_destroy(nullptr);
 
-    adaptq_mha_t mha = adaptq_mha_create(2, 64, 4, 4, 0, 0.f, 0);
+    adaptq_mha_t mha = adaptq_mha_create(2, 64, 4, 4, 4, 0, 0.f, 0);
     INFO(adaptq_last_error());
     REQUIRE(mha != nullptr);
 
@@ -303,7 +303,7 @@ TEST_CASE("adaptq_features returns valid bitmask", "[api]") {
 TEST_CASE("adaptq context handles sizes around and above 65536 tokens", "[api][limits]") {
     // We test 65535, 65536, 65537, and 100000.
     // We create a single cache with capacity 100005 to cover everything.
-    adaptq_ctx_t h = adaptq_create(64, 4, 100005, 42, 0.f, 0);
+    adaptq_ctx_t h = adaptq_create(64, 4, 4, 100005, 42, 0.f, 0);
     REQUIRE(h != nullptr);
 
     float k[64] = {}, v[64] = {}, q[64] = {}, out[64];
@@ -332,7 +332,7 @@ TEST_CASE("adaptq context handles sizes around and above 65536 tokens", "[api][l
 /* ---- Boundary Conditions (Issue #16) ---------------------------------- */
 
 TEST_CASE("Max-Lloyd codebooks handle boundary conditions and outlier vectors without crashing", "[api][security][boundary]") {
-    adaptq_ctx_t h = adaptq_create(64, 4, 128, 42, 0.f, 0);
+    adaptq_ctx_t h = adaptq_create(64, 4, 4, 128, 42, 0.f, 0);
     REQUIRE(h != nullptr);
 
     float q[64] = {}, out[64] = {};
@@ -367,21 +367,21 @@ TEST_CASE("AlignedAllocator throws std::bad_alloc on huge allocation request", "
 
 TEST_CASE("KVFlatBuffer handles initialization, insert, and cleanup safely", "[cache][flatbuffer]") {
     KVFlatBuffer buf;
-    buf.init(16, 64, 4);
+    buf.init(16, 64, 4, 4);
     REQUIRE(buf.capacity == 16);
     REQUIRE(buf.size == 0);
     REQUIRE(buf.k_data != nullptr);
     REQUIRE(buf.v_data != nullptr);
 
-    std::vector<uint8_t> dummy_k(buf.packed_bytes, 0x12);
-    std::vector<uint8_t> dummy_v(buf.packed_bytes, 0x34);
+    std::vector<uint8_t> dummy_k(buf.k_packed_bytes, 0x12);
+    std::vector<uint8_t> dummy_v(buf.v_packed_bytes, 0x34);
 
     int idx = buf.insert(dummy_k.data(), 1.0f, dummy_v.data(), 2.0f, 0);
     REQUIRE(idx == 0);
     REQUIRE(buf.size == 1);
     REQUIRE(buf.k_ptr(0)[0] == 0x12);
     REQUIRE(buf.v_ptr(0)[0] == 0x34);
-    REQUIRE(buf.kv_bytes() == (size_t)buf.packed_bytes * 2);
+    REQUIRE(buf.kv_bytes() == (size_t)(buf.k_packed_bytes + buf.v_packed_bytes));
 
     buf.free_aligned();
     REQUIRE(buf.k_data == nullptr);
@@ -422,7 +422,7 @@ TEST_CASE("softmax handles empty, null, single element, and zero-sum safely", "[
 
 TEST_CASE("hybrid path invalidates raw_kv on ring buffer eviction to prevent stale tokens", "[attention][hybrid][eviction]") {
     // capacity = 4, hybrid_thresh = 16 (capacity < hybrid_thresh)
-    adaptq_ctx_t h = adaptq_create(64, 4, 4, 42, 0.f, 16);
+    adaptq_ctx_t h = adaptq_create(64, 4, 4, 4, 42, 0.f, 16);
     REQUIRE(h != nullptr);
 
     float k[64] = {}, v_old[64] = {}, v_new[64] = {}, q[64] = {}, out[64] = {};
