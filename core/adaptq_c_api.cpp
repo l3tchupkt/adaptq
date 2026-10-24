@@ -13,12 +13,25 @@
  * ----------------------------------------------------------------------- */
 
 static thread_local char tl_error_buf[256] = "";
+static thread_local adaptq_error_t tl_error_code = ADAPTQ_OK;
 
-static void set_error(adaptq_error_t /*code*/, const char *msg) {
+/* Every operation that can fail clears the state on entry, so a successful
+ * call always leaves adaptq_last_error() empty and adaptq_last_error_code()
+ * at ADAPTQ_OK. Destroy functions intentionally do not touch the state, so
+ * callers can still log the failure after cleaning up. */
+static void clear_error(void) {
+  tl_error_buf[0] = '\0';
+  tl_error_code = ADAPTQ_OK;
+}
+
+static void set_error(adaptq_error_t code, const char *msg) {
+  tl_error_code = code;
   snprintf(tl_error_buf, sizeof(tl_error_buf), "%s", msg);
 }
 
 const char *adaptq_last_error(void) { return tl_error_buf; }
+
+adaptq_error_t adaptq_last_error_code(void) { return tl_error_code; }
 
 static bool require_handle(const void *handle, const char *operation) {
   if (handle)
@@ -62,6 +75,7 @@ struct AdapTQMHA {
 
 adaptq_ctx_t adaptq_create(int dim, int k_bits, int v_bits, int capacity, uint64_t seed,
                            float v_mass, int hybrid_thresh) {
+  clear_error();
   if (dim <= 0 || (k_bits != 16 && (k_bits < 2 || k_bits > 4)) || (v_bits != 16 && (v_bits < 2 || v_bits > 4)) || capacity < 0 || hybrid_thresh < 0) {
     set_error(ADAPTQ_ERR_INVALID_ARG, "adaptq_create: invalid dimensions or capacity");
     return nullptr;
@@ -81,6 +95,7 @@ void adaptq_destroy(adaptq_ctx_t h) {
 
 void adaptq_append(adaptq_ctx_t h, const float *key, const float *val,
                    int token_pos) {
+  clear_error();
   if (!require_handle(h, "adaptq_append") ||
       !require_pointer(key, "adaptq_append", "key") ||
       !require_pointer(val, "adaptq_append", "val")) {
@@ -94,6 +109,7 @@ void adaptq_append(adaptq_ctx_t h, const float *key, const float *val,
 }
 
 int adaptq_compute(adaptq_ctx_t h, const float *query, float *out) {
+  clear_error();
   if (!require_handle(h, "adaptq_compute") ||
       !require_pointer(query, "adaptq_compute", "query") ||
       !require_pointer(out, "adaptq_compute", "out")) {
@@ -108,6 +124,7 @@ int adaptq_compute(adaptq_ctx_t h, const float *query, float *out) {
 
 int adaptq_compute_batch(adaptq_ctx_t h, const float *queries, int num_queries,
                          float *outs) {
+  clear_error();
   if (!require_handle(h, "adaptq_compute_batch"))
     return -1;
   if (num_queries < 0) {
@@ -126,6 +143,7 @@ int adaptq_compute_batch(adaptq_ctx_t h, const float *queries, int num_queries,
 }
 
 void adaptq_reset(adaptq_ctx_t h) {
+  clear_error();
   if (!require_handle(h, "adaptq_reset"))
     return;
 
@@ -133,10 +151,10 @@ void adaptq_reset(adaptq_ctx_t h) {
   ctx->head.kv_buf.size = 0;
   ctx->head.kv_buf.head = 0;
   ctx->head.raw_kv.clear();  /* clear hybrid FP32 mirror — stale after reset */
-  tl_error_buf[0] = '\0';
 }
 
 size_t adaptq_kv_bytes(adaptq_ctx_t h) {
+  clear_error();
   if (!require_handle(h, "adaptq_kv_bytes"))
     return 0;
   return static_cast<AdapTQCtx *>(h)->head.kv_bytes();
@@ -149,6 +167,7 @@ size_t adaptq_kv_bytes(adaptq_ctx_t h) {
 adaptq_mha_t adaptq_mha_create(int n_heads, int dim, int k_bits, int v_bits, int capacity,
                                uint64_t base_seed, float v_mass,
                                int hybrid_thresh) {
+  clear_error();
   if (n_heads <= 0 || dim <= 0 || (k_bits != 16 && (k_bits < 2 || k_bits > 4)) || (v_bits != 16 && (v_bits < 2 || v_bits > 4)) || capacity < 0 || hybrid_thresh < 0) {
     set_error(ADAPTQ_ERR_INVALID_ARG, "adaptq_mha_create: invalid parameters");
     return nullptr;
@@ -176,6 +195,7 @@ void adaptq_mha_destroy(adaptq_mha_t h) {
 
 void adaptq_mha_append(adaptq_mha_t h, int head_idx, const float *key,
                        const float *val, int token_pos) {
+  clear_error();
   if (!require_handle(h, "adaptq_mha_append"))
     return;
 
@@ -190,12 +210,12 @@ void adaptq_mha_append(adaptq_mha_t h, int head_idx, const float *key,
     return;
   }
 
-  tl_error_buf[0] = '\0';
   adaptq_append(mha->heads[head_idx], key, val, token_pos);
 }
 
 int adaptq_mha_compute(adaptq_mha_t h, int head_idx, const float *query,
                        float *out) {
+  clear_error();
   if (!require_handle(h, "adaptq_mha_compute"))
     return -1;
 
@@ -210,12 +230,12 @@ int adaptq_mha_compute(adaptq_mha_t h, int head_idx, const float *query,
     return -1;
   }
 
-  tl_error_buf[0] = '\0';
   return adaptq_compute(mha->heads[head_idx], query, out);
 }
 
 int adaptq_mha_compute_batch(adaptq_mha_t h, int head_idx, const float *queries,
                              int num_queries, float *outs) {
+  clear_error();
   if (!require_handle(h, "adaptq_mha_compute_batch"))
     return -1;
 
@@ -236,11 +256,11 @@ int adaptq_mha_compute_batch(adaptq_mha_t h, int head_idx, const float *queries,
     return -1;
   }
 
-  tl_error_buf[0] = '\0';
   return adaptq_compute_batch(mha->heads[head_idx], queries, num_queries, outs);
 }
 
 void adaptq_mha_reset(adaptq_mha_t h) {
+  clear_error();
   if (!require_handle(h, "adaptq_mha_reset"))
     return;
 
@@ -250,6 +270,7 @@ void adaptq_mha_reset(adaptq_mha_t h) {
 }
 
 size_t adaptq_mha_total_kv_bytes(adaptq_mha_t h) {
+  clear_error();
   if (!require_handle(h, "adaptq_mha_total_kv_bytes"))
     return 0;
 

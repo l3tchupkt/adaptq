@@ -31,10 +31,18 @@ typedef enum {
 
 /**
  * Returns a human-readable description of the last error on this thread.
- * Returns an empty string if no error has occurred.
+ * Empty when the most recent operation that can fail succeeded; operations
+ * clear the state on entry, while destroy functions leave it untouched for
+ * post-cleanup reporting.
  * Valid until the next AdapTQ call on this thread.
  */
 const char *adaptq_last_error(void);
+
+/**
+ * Returns the code of the last error on this thread, ADAPTQ_OK when
+ * adaptq_last_error() is empty.
+ */
+adaptq_error_t adaptq_last_error_code(void);
 
 #endif /* ADAPTQ_ERROR_DEFINED */
 

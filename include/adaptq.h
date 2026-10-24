@@ -24,10 +24,19 @@ typedef enum {
 
 /**
  * Returns a human-readable description of the last error on this thread.
- * Returns an empty string if no error has occurred.
+ * Returns an empty string if the most recent operation that can fail
+ * succeeded. Every such operation clears the state on entry, so a successful
+ * call always leaves this empty; destroy functions are exempt so callers can
+ * still report a failure after cleanup.
  * The returned pointer is valid until the next adaptq call on this thread.
  */
 const char *adaptq_last_error(void);
+
+/**
+ * Returns the code of the last error on this thread, or ADAPTQ_OK when
+ * adaptq_last_error() is empty. Kept in sync with adaptq_last_error().
+ */
+adaptq_error_t adaptq_last_error_code(void);
 
 typedef void *adaptq_ctx_t; /* opaque per-head context */
 typedef void *adaptq_mha_t; /* opaque multi-head aggregate */
