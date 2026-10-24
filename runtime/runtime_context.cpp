@@ -127,14 +127,18 @@ void RuntimeContext::init(const RuntimeContextConfig &cfg,
         for (int h = 0; h < cfg.n_heads; ++h) {
             hcfg.seed = (uint64_t)l * 65537ULL + (uint64_t)h;
 
-            auto *strat = strategy_fn();
+            std::unique_ptr<IKVStrategy> strat(strategy_fn());
+            if (!strat)
+                throw std::invalid_argument("RuntimeContext::init: strategy factory returned null");
             strat->init(hcfg);
-            strategies_.emplace_back(strat);
+            strategies_.emplace_back(std::move(strat));
 
-            auto *stor = storage_fn();
+            std::unique_ptr<IStorageBackend> stor(storage_fn());
+            if (!stor)
+                throw std::invalid_argument("RuntimeContext::init: storage factory returned null");
             /* Storage holds K and V slots — capacity × 2. */
             stor->init(cfg.capacity * 2, slot_bytes);
-            storages_.emplace_back(stor);
+            storages_.emplace_back(std::move(stor));
         }
     }
 

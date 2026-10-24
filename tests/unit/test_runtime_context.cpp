@@ -42,6 +42,53 @@ static void rand_vec(float *v, int d, unsigned seed = 42) {
     for (int i = 0; i < d; ++i) v[i] /= n;
 }
 
+/* ---- Factory failure helpers ------------------------------------------- */
+
+struct CountingStrategy final : IKVStrategy {
+    static int live;
+    static bool throw_on_init;
+
+    CountingStrategy() { ++live; }
+    ~CountingStrategy() override { --live; }
+
+    void init(const HeadConfig &) override {
+        if (throw_on_init)
+            throw std::runtime_error("CountingStrategy: init failure");
+    }
+    void reset() override {}
+    const char *name() const override { return "counting"; }
+    ICompression *compression() override { return nullptr; }
+    IEviction    *eviction()    override { return nullptr; }
+};
+
+int  CountingStrategy::live = 0;
+bool CountingStrategy::throw_on_init = false;
+
+struct CountingStorage final : IStorageBackend {
+    static int live;
+    static bool throw_on_init;
+
+    CountingStorage() { ++live; }
+    ~CountingStorage() override { --live; }
+
+    void init(int, int) override {
+        if (throw_on_init)
+            throw std::runtime_error("CountingStorage: init failure");
+    }
+    void reset() override {}
+    StorageSlot write(const uint8_t *, int, float, uint8_t) override {
+        return ADAPTQ_INVALID_SLOT;
+    }
+    CompressResult read(StorageSlot) const override { return {}; }
+    void free_slot(StorageSlot) override {}
+    size_t bytes_used() const override { return 0; }
+    size_t bytes_capacity() const override { return 0; }
+    const char *name() const override { return "counting"; }
+};
+
+int  CountingStorage::live = 0;
+bool CountingStorage::throw_on_init = false;
+
 /* =========================================================================
  * Test cases
  * ========================================================================= */
@@ -61,6 +108,38 @@ TEST_CASE("RuntimeContext: rejects invalid configuration before allocation", "[r
     }) {
         REQUIRE_THROWS_AS(ctx.init(cfg), std::invalid_argument);
     }
+}
+
+TEST_CASE("RuntimeContext: strategy init failure does not leak the strategy", "[runtime][security]") {
+    CountingStrategy::live = 0;
+    CountingStrategy::throw_on_init = true;
+
+    RuntimeContext ctx;
+    REQUIRE_THROWS_AS(
+        ctx.init(make_cfg(),
+                 []() -> IKVStrategy * { return new CountingStrategy(); },
+                 make_contiguous),
+        std::runtime_error);
+
+    REQUIRE(CountingStrategy::live == 0);
+    CountingStrategy::throw_on_init = false;
+}
+
+TEST_CASE("RuntimeContext: storage init failure does not leak the storage", "[runtime][security]") {
+    CountingStrategy::live = 0;
+    CountingStorage::live  = 0;
+    CountingStrategy::throw_on_init = false;
+    CountingStorage::throw_on_init  = true;
+
+    RuntimeContext ctx;
+    REQUIRE_THROWS_AS(
+        ctx.init(make_cfg(),
+                 []() -> IKVStrategy * { return new CountingStrategy(); },
+                 []() -> IStorageBackend * { return new CountingStorage(); }),
+        std::runtime_error);
+
+    REQUIRE(CountingStorage::live == 0);
+    CountingStorage::throw_on_init = false;
 }
 
 TEST_CASE("RuntimeContext: get_strategy / get_storage return non-null", "[runtime]") {
