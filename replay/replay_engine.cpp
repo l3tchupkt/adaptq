@@ -238,6 +238,16 @@ ReplayReport ReplayEngine::replay_with(const SessionSnapshot      &snap,
         throw std::runtime_error("ReplayEngine::replay_with: unknown strategy '"
                                  + strategy_name + "'");
 
+    /* The token log is indexed using the snapshot dimensions. A config with
+     * different dimensions would either truncate each vector or read past it,
+     * and a config with fewer layers or heads would index out of range. */
+    if (cfg.n_layers != snap.n_layers() ||
+        cfg.n_heads  != snap.n_heads()  ||
+        cfg.dim      != snap.dim()) {
+        throw std::invalid_argument(
+            "ReplayEngine::replay_with: context config shape does not match snapshot");
+    }
+
     /* Build a fresh RuntimeContext with the alternate strategy. */
     RuntimeContext alt_ctx;
     alt_ctx.init(cfg, sfn, make_contiguous);

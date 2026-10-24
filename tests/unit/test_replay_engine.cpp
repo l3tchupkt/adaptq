@@ -181,6 +181,45 @@ TEST_CASE("ReplayEngine: cross-strategy replay with fp_passthrough", "[replay]")
     REQUIRE(report.strategy_name == "fp_passthrough");
 }
 
+TEST_CASE("ReplayEngine: cross-strategy replay rejects dimension mismatch", "[replay]") {
+    SessionSnapshot snap = build_snapshot(5, 64);
+
+    RuntimeContextConfig cfg = make_cfg(5, 32);
+    cfg.log_tokens = false;
+
+    ReplayEngine engine;
+    REQUIRE_THROWS_AS(
+        engine.replay_with(snap, "fp_passthrough", cfg),
+        std::invalid_argument
+    );
+}
+
+TEST_CASE("ReplayEngine: cross-strategy replay rejects layer mismatch", "[replay]") {
+    SessionSnapshot snap = build_snapshot(5, 64);
+
+    RuntimeContextConfig cfg = make_cfg(5, 64);
+    cfg.n_layers = 2;
+
+    ReplayEngine engine;
+    REQUIRE_THROWS_AS(
+        engine.replay_with(snap, "fp_passthrough", cfg),
+        std::invalid_argument
+    );
+}
+
+TEST_CASE("ReplayEngine: cross-strategy replay rejects head mismatch", "[replay]") {
+    SessionSnapshot snap = build_snapshot(5, 64);
+
+    RuntimeContextConfig cfg = make_cfg(5, 64);
+    cfg.n_heads = 4;
+
+    ReplayEngine engine;
+    REQUIRE_THROWS_AS(
+        engine.replay_with(snap, "fp_passthrough", cfg),
+        std::invalid_argument
+    );
+}
+
 TEST_CASE("ReplayEngine: cross-strategy replay unknown strategy throws", "[replay]") {
     SessionSnapshot snap = build_snapshot(5);
     RuntimeContextConfig cfg = make_cfg(5);
