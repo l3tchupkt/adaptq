@@ -251,9 +251,12 @@ class LlamaCppPythonAdapter(IRuntimeAdapter):
             n_tokens = len(self._prompt_tokens) + len(self._generated_ids)
             m = self._meta
             if m.n_heads > 0 and m.head_dim > 0 and m.n_layers > 0:
-                fp16_bytes = n_tokens * m.n_layers * m.n_heads * m.head_dim * 2 * 2
-                # AdapTQ: bits/32 * fp32 size
-                adaptq_bytes = int(fp16_bytes * m.adaptq_bits / 32)
+                # K and V each hold n_tokens * n_layers * n_heads * head_dim
+                # values. FP16 uses two bytes per value, while AdapTQ stores
+                # each value in adaptq_bits bits.
+                n_values = n_tokens * m.n_layers * m.n_heads * m.head_dim * 2
+                fp16_bytes = n_values * 2
+                adaptq_bytes = (n_values * m.adaptq_bits + 7) // 8
                 self._kv_bytes_fp16   = fp16_bytes
                 self._kv_bytes_adaptq = adaptq_bytes
         except Exception:
