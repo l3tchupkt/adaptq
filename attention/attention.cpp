@@ -466,8 +466,8 @@ static void compute_avx2(const float *qr, float *acc, const float *k_cb, const f
     for (; ii < n && mass < v_mass_thresh; ++ii) {
       int s = slots[ord[ii]];
       float w = logits[ord[ii]];
-      vaccum1<BITS>(acc, vb + (size_t)s * pb, w * vscale[s] * isp, cl, ch,
-                    padded);
+      vaccum1<V_BITS>(acc, vb + (size_t)s * v_pb, w * vscale[s] * isp, v_cl, v_ch,
+                      padded);
       mass += w;
     }
   }

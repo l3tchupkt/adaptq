@@ -7,7 +7,6 @@ on Windows MSVC, /openmp is used.
 """
 import os
 import platform
-import sys
 
 from setuptools import Extension, find_packages, setup
 
@@ -17,6 +16,25 @@ try:
 except ImportError:
     # Allow the package to be importable without pybind11 (C ext unavailable)
     _pb11_includes = []
+
+
+def march_flags() -> list:
+    """Return ISA-baseline flags for the C++ extension build.
+
+    The 0.2.2 release removed -mavx2 and -march=native from Python builds so
+    that wheels stay portable across x86 CPUs while AVX2 routines dispatch at
+    runtime; the Python extension build follows the same rule and emits no
+    -march flag by default. Set ADAPTQ_MARCH=native for a host-tuned local
+    build, or set ADAPTQ_MARCH to a target name (for example haswell or
+    x86-64-v3) to build against an explicit baseline. ADAPTQ_MARCH=portable
+    is equivalent to leaving it unset.
+    """
+    override = os.environ.get("ADAPTQ_MARCH", "").strip()
+    if not override or override.lower() == "portable":
+        return []
+    if override.lower() == "native":
+        return ["-march=native"]
+    return [f"-march={override}"]
 
 
 # ---------------------------------------------------------------------------
@@ -34,8 +52,10 @@ elif platform.system() == "Darwin":
     _compile_args += ["-Xpreprocessor", "-fopenmp"]
     _link_args += ["-lomp"]
 else:
-    # Linux/GCC — OpenMP available via libgomp1
-    _compile_args += ["-fopenmp", "-march=native"]
+    # Linux/GCC — OpenMP available via libgomp1. The ISA baseline is opt-in
+    # through ADAPTQ_MARCH so that shared wheels do not inherit the build
+    # host's instruction set.
+    _compile_args += ["-fopenmp"] + march_flags()
     _link_args += ["-fopenmp"]
 
 # ---------------------------------------------------------------------------
@@ -67,9 +87,13 @@ if _pb11_includes:
         )
     ]
 
-setup(
-    name="adaptq",
-    packages=find_packages(include=["adaptq", "adaptq.*"]),
-    ext_modules=ext_modules,
-    zip_safe=False,
-)
+# setuptools.build_meta executes this file with __name__ == "__main__", so the
+# guard keeps `python setup.py ...` and PEP 517 builds working while letting
+# tests import the helpers above without running a build.
+if __name__ == "__main__":
+    setup(
+        name="adaptq",
+        packages=find_packages(include=["adaptq", "adaptq.*"]),
+        ext_modules=ext_modules,
+        zip_safe=False,
+    )
