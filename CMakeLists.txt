@@ -266,6 +266,13 @@ if(ADAPTQ_BUILD_TESTS)
   target_link_libraries(test_kernel_selector PRIVATE adapTQ_runtime adapTQ_core Catch2::Catch2WithMain)
   catch_discover_tests(test_kernel_selector)
 
+  # --- test_cli_args (strict replay option validation) ---------------------
+  add_executable(test_cli_args
+      tests/unit/test_cli_args.cpp)
+  target_include_directories(test_cli_args PRIVATE cli)
+  target_link_libraries(test_cli_args PRIVATE Catch2::Catch2WithMain)
+  catch_discover_tests(test_cli_args)
+
   message(STATUS "Test targets enabled (V1: 38 tests + V2: runtime/snapshot/replay + Codebook/Kernel tests)")
 endif()
 
