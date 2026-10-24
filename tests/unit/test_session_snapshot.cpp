@@ -146,6 +146,32 @@ TEST_CASE("SessionSnapshot: save and load roundtrip", "[snapshot]") {
     fs::remove(path);
 }
 
+TEST_CASE("SessionSnapshot: save reports buffered write failures", "[snapshot]") {
+#if defined(__linux__)
+    if (!fs::exists("/dev/full")) {
+        SUCCEED("write-failure device is not available");
+        return;
+    }
+
+    /* Keep the payload below the stream buffer size so the failure can only be
+     * observed by flushing and closing. Without those checks save() returns
+     * successfully even though nothing reached the destination. */
+    auto ctx = make_ctx_with_tokens(2, 64, false);
+    SessionSnapshot snap = SessionSnapshot::capture(*ctx, false);
+
+    bool threw = false;
+    try {
+        snap.save("/dev/full");
+    } catch (const std::runtime_error &e) {
+        threw = true;
+        REQUIRE(std::string(e.what()).find("write error") != std::string::npos);
+    }
+    REQUIRE(threw);
+#else
+    SUCCEED("write-failure device is only available on Linux");
+#endif
+}
+
 TEST_CASE("SessionSnapshot: load rejects bad magic", "[snapshot]") {
     std::string path = tmp_path("adaptq_bad_magic.aqss");
     {

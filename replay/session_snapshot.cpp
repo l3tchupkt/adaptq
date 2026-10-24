@@ -262,6 +262,16 @@ void SessionSnapshot::save(const std::string &path) const {
     }
 
     if (!f) throw std::runtime_error("SessionSnapshot::save: write error for " + path);
+
+    /* An ofstream buffers small writes, so the state check above can pass even
+     * when the destination cannot accept the data. Force the buffer out and
+     * then close explicitly; both operations have their own failure modes that
+     * must be surfaced before save() reports success. */
+    f.flush();
+    if (!f) throw std::runtime_error("SessionSnapshot::save: write error for " + path);
+
+    f.close();
+    if (!f) throw std::runtime_error("SessionSnapshot::save: write error for " + path);
 }
 
 /* =========================================================================
