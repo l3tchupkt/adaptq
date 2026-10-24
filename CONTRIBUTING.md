@@ -67,7 +67,7 @@ cd ..
 
 ### 3. Run Python Integration Tests
 
-Ensure you have a Python 3.8+ virtual environment set up.
+Ensure you have a Python 3.9+ virtual environment set up.
 
 ```bash
 # Install the package and test dependencies

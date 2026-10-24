@@ -154,7 +154,7 @@ jobs:
       - name: Pytest — unit and LA policy tests
         run: |
           pytest tests/test_la_policy.py tests/test_packed_kv.py \
-            -v --tb=short -q
+            tests/test_packaging_metadata.py -v --tb=short -q
 
       - name: Pytest — integration contract tests (no model needed)
         run: |
