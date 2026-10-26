@@ -269,3 +269,4 @@ if(ADAPTQ_BUILD_TESTS)
   message(STATUS "Test targets enabled (V1: 38 tests + V2: runtime/snapshot/replay + Codebook/Kernel tests)")
 endif()
 
+set(CMAKE_CXX_STANDARD 17)
