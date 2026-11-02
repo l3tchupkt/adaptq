@@ -52,7 +52,7 @@ jobs:
 
       - name: Install package with C++ extension
         run: |
-          pip install pybind11 numpy
+          pip install pybind11 numpy pytest
           pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
           pip install -e .
 
@@ -128,7 +128,7 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install pybind11 numpy
+          pip install pybind11 numpy pytest
           pip install torch
           pip install -e .
 
@@ -156,7 +156,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   python-package:
     name: Python ${{ matrix.python-version }} (Ubuntu)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
@@ -178,7 +178,7 @@ jobs:
 
       - name: Install package with C++ extension
         run: |
-          pip install pybind11 numpy
+          pip install pybind11 numpy pytest
           pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
           pip install -e .[dev]
 
