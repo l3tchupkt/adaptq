@@ -52,7 +52,7 @@ jobs:
 
       - name: Install package with C++ extension
         run: |
-          pip install pybind11 numpy
+          pip install pybind11 numpy pytest
           pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
           pip install -e .
 
@@ -66,6 +66,45 @@ jobs:
 
       - name: Run core API tests
         run: python3 tests/run_tests.py
+
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job: C++ tests under AddressSanitizer + UndefinedBehaviorSanitizer (#241)
+  # Catches the memory-safety class of bug previously found by manual review
+  # (e.g. #168 out-of-bounds reads, #20 cache-wrap corruption, #62 dtype
+  # confusion) automatically on every PR.
+  # ───────────────────────────────────────────────────────────────────────────
+  sanitize-linux:
+    name: Linux C++ (ASan+UBSan)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ libgomp1
+
+      - name: Configure CMake (Debug + sanitizers)
+        run: |
+          cmake -B build-asan \
+                -G Ninja \
+                -DCMAKE_BUILD_TYPE=Debug \
+                -DADAPTQ_BUILD_TESTS=ON \
+                -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+                -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build
+        run: cmake --build build-asan --parallel
+
+      - name: CTest (sanitizers)
+        run: ctest --output-on-failure --parallel 4
+        working-directory: build-asan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:allocator_may_return_null=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
 
   # ───────────────────────────────────────────────────────────────────────────
   # Job 2: C++ build and CTest (Windows, MSVC)
@@ -89,7 +128,7 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install pybind11 numpy
+          pip install pybind11 numpy pytest
           pip install torch
           pip install -e .
 
@@ -117,7 +156,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   python-package:
     name: Python ${{ matrix.python-version }} (Ubuntu)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
@@ -139,7 +178,7 @@ jobs:
 
       - name: Install package with C++ extension
         run: |
-          pip install pybind11 numpy
+          pip install pybind11 numpy pytest
           pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
           pip install -e .[dev]
 

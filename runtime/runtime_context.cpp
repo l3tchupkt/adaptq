@@ -295,9 +295,6 @@ ComputeMetrics RuntimeContext::compute(int          layer,
                                        int          head,
                                        const float *q_vec,
                                        float       *out) {
-    assert(layer >= 0 && layer < cfg_.n_layers);
-    assert(head  >= 0 && head  < cfg_.n_heads);
-
     auto t0 = std::chrono::high_resolution_clock::now();
 
     int idx = head_idx(layer, head);
