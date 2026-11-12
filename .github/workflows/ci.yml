@@ -1,10 +1,16 @@
+
 name: AdapTQ CI
 
 on:
   push:
-    branches: [ "main", "dev", "v*" ]
+    branches:
+      - main
+      - dev
+      - 'v*'
   pull_request:
-    branches: [ "main", "v2" ]
+    branches:
+      - main
+      - v2
 
 permissions:
   contents: read
@@ -15,15 +21,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ───────────────────────────────────────────────────────────────────────────
   # Job 1: C++ build and CTest (Linux, GCC)
-  # ───────────────────────────────────────────────────────────────────────────
   build-linux:
     name: Linux C++ (GCC)
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Install system dependencies
         run: |
@@ -34,48 +44,43 @@ jobs:
       - name: Configure CMake (Release)
         run: |
           cmake -B build \
-                -G Ninja \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DADAPTQ_BUILD_TESTS=ON
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DADAPTQ_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: CTest
+      - name: Run CTest
         run: ctest --build-config Release --output-on-failure --parallel 4
         working-directory: build
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
       - name: Install package with C++ extension
         run: |
+          python -m pip install --upgrade pip
           pip install pybind11 numpy
           pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
           pip install -e .
 
       - name: Verify import and C extension
         run: |
-          python3 -c "import adaptq; print('adaptq version:', adaptq.__version__)"
-          python3 -c "import adaptq_py; print('adaptq_py extension loaded OK')"
+          python -c "import adaptq; print('adaptq version:', adaptq.__version__)"
+          python -c "import adaptq_py; print('adaptq_py extension loaded OK')"
 
       - name: Run accuracy test
-        run: python3 tests/test_accuracy.py
+        run: python tests/test_accuracy.py
 
       - name: Run core API tests
-        run: python3 tests/run_tests.py
+        run: python tests/run_tests.py
 
-  # ───────────────────────────────────────────────────────────────────────────
   # Job 2: C++ build and CTest (Windows, MSVC)
-  # ───────────────────────────────────────────────────────────────────────────
   build-windows:
     name: Windows C++ (MSVC)
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -85,10 +90,11 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install Python dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install pybind11 numpy
           pip install torch
           pip install -e .
@@ -100,31 +106,33 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: CTest
+      - name: Run CTest
         run: ctest --build-config Release --output-on-failure --parallel 4
         working-directory: build
 
       - name: Verify import
-        run: python -c "import adaptq; print('adaptq version:', adaptq.__version__)"
+        run: |
+          python -c "import adaptq; print('adaptq version:', adaptq.__version__)"
+          python -c "import adaptq_py; print('C extension OK')"
         shell: pwsh
 
       - name: Run core API tests
-        run: python tests\run_tests.py
+        run: python tests/run_tests.py
         shell: pwsh
 
-  # ───────────────────────────────────────────────────────────────────────────
   # Job 3: Python package matrix (build + unit tests)
-  # ───────────────────────────────────────────────────────────────────────────
   python-package:
     name: Python ${{ matrix.python-version }} (Ubuntu)
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -139,9 +147,10 @@ jobs:
 
       - name: Install package with C++ extension
         run: |
+          python -m pip install --upgrade pip
           pip install pybind11 numpy
           pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
-          pip install -e .[dev]
+          pip install -e ".[dev]"
 
       - name: Verify import
         run: |
@@ -151,12 +160,12 @@ jobs:
       - name: Run accuracy tests
         run: python tests/test_accuracy.py
 
-      - name: Pytest — unit and LA policy tests
+      - name: Pytest - unit and LA policy tests
         run: |
           pytest tests/test_la_policy.py tests/test_packed_kv.py \
             -v --tb=short -q
 
-      - name: Pytest — integration contract tests (no model needed)
+      - name: Pytest - integration contract tests
         run: |
           pytest integration_tests/test_adapter_contract.py \
             -v --tb=short -q
