@@ -1,105 +1,162 @@
+
 name: AdapTQ V2.1 Integration Tests
 
 on:
   push:
-    branches: [main, v2.1, v2]
+    branches:
+      - main
+      - v2.1
+      - v2
   pull_request:
-    branches: [main, v2]
+    branches:
+      - main
+      - v2
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # ── Unit, Conformance & Security tests (C++) ─────────────────────────────────────
+
+  # Job 1: C++ Unit, Conformance and Security Tests
   cpp-tests:
     name: C++ Unit & Security Tests (Ubuntu)
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install build deps
-        run: sudo apt-get install -y cmake ninja-build libgomp1
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ libgomp1
 
-      - name: Configure
-        run: cmake -B build_release -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Configure CMake
+        run: |
+          cmake -B build_release -S . -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build
+      - name: Build C++ project
         run: cmake --build build_release --parallel 4
 
-      - name: Run unit, conformance, and security tests
-        run: cd build_release && ctest --output-on-failure -j4
+      - name: Run unit, conformance and security tests
+        run: ctest --test-dir build_release --output-on-failure -j4
 
-  # ── Python adapter contract tests (no model needed) ────────────────────
+
+  # Job 2: Python Adapter Contract Tests
   adapter-contract:
     name: Adapter Contract Tests (Python)
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - name: Install AdapTQ + backends
+      - name: Install build dependencies
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ libgomp1
+
+      - name: Install AdapTQ and backends
+        run: |
+          python -m pip install --upgrade pip
+          pip install pybind11 numpy
+          pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
           pip install -e .
-          pip install transformers accelerate torch --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install transformers accelerate
           pip install llama-cpp-python requests pytest
 
       - name: Run adapter contract tests
-        run: pytest integration_tests/test_adapter_contract.py -v
+        run: |
+          pytest integration_tests/test_adapter_contract.py -v
 
-  # ── Transformers integration (downloads Qwen2-0.5B ~1GB) ──────────────
+
+  # Job 3: Transformers Integration Tests
   transformers-integration:
     name: Transformers Integration Tests
     runs-on: ubuntu-latest
-    # Only run on push to main (model download is slow)
+
+    # Run only on push to main because model downloads are time-consuming
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - name: Install deps
+      - name: Install build dependencies
         run: |
-          pip install -e .
-          pip install transformers accelerate torch --extra-index-url https://download.pytorch.org/whl/cpu
-          pip install pytest huggingface-hub
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ libgomp1
 
-      - name: Run transformers integration tests
+      - name: Install AdapTQ and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pybind11 numpy
+          pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install -e .
+          pip install transformers accelerate pytest huggingface-hub
+          pip install pytest-timeout
+
+      - name: Run Transformers integration tests
         env:
-          HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
-          TRANSFORMERS_OFFLINE: "0"
+          HF_HUB_DISABLE_SYMLINKS_WARNING: '1'
+          TRANSFORMERS_OFFLINE: '0'
         run: |
           pytest integration_tests/test_transformers.py -v \
             --model-hf Qwen/Qwen2-0.5B \
             -x --timeout=300
 
-  # ── Python validation suite (existing V1+V2 tests) ────────────────────
+
+  # Job 4: Python Validation Suite
   python-validation:
     name: Python Validation Suite
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - name: Install build deps
-        run: sudo apt-get install -y cmake ninja-build libgomp1
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ libgomp1
 
       - name: Build C++ for Python tests
         run: |
-          cmake -B build_release -S . -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -B build_release -S . -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release
           cmake --build build_release --parallel 4
 
-      - name: Install AdapTQ
+      - name: Install AdapTQ and Python dependencies
         run: |
+          python -m pip install --upgrade pip
+          pip install pybind11 numpy
+          pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
           pip install -e .
-          pip install numpy torch pytest
+          pip install pytest
 
       - name: Run Python validation suite
         run: |
