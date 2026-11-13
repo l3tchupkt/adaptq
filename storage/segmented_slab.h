@@ -60,7 +60,7 @@ public:
                       float scale, uint8_t format_tag) override {
         if (!data || data_bytes <= 0 || data_bytes > max_slot_bytes_ || capacity_ <= 0)
             return (StorageSlot)0;
-        Slab *sl = get_or_create_slab(format_tag, data_bytes);
+        Slab *sl = get_or_create_slab(format_tag);
         if (!sl) return (StorageSlot)0;
         int local;
         if (sl->size < capacity_) { local = sl->next_slot++; sl->size++; }
@@ -80,11 +80,16 @@ public:
         int slab_id = (int)(slot / SS_ENCODE);
         int local   = (int)(slot % SS_ENCODE);
         if (slab_id < 0 || slab_id >= n_slabs_ || local < 0 || local >= capacity_)
-            return CompressResult{nullptr, 0, 0.f, 0, slot};
+            return CompressResult{nullptr, 0, 0.f, 0xFF, ADAPTQ_INVALID_SLOT};
+
         const Slab &sl = slabs_[slab_id];
+        const int data_bytes = sl.data_sizes[local];
+        if (data_bytes <= 0)
+            return CompressResult{nullptr, 0, 0.f, 0xFF, ADAPTQ_INVALID_SLOT};
+
         return CompressResult{
             sl.data + (size_t)local * sl.slot_bytes,
-            sl.slot_bytes, sl.scales[local], sl.tags[local], slot
+            data_bytes, sl.scales[local], sl.tags[local], slot
         };
     }
 
@@ -127,15 +132,18 @@ private:
     int  max_slot_bytes_= 0;
     int  total_used_    = 0;
 
-    Slab *get_or_create_slab(uint8_t format_tag, int data_bytes) {
+    Slab *get_or_create_slab(uint8_t format_tag) {
         for (int i = 0; i < n_slabs_; ++i)
             if (slabs_[i].format_tag == format_tag) return &slabs_[i];
         if (n_slabs_ >= SS_MAX_SLABS) return nullptr;
         Slab &sl      = slabs_[n_slabs_];
         sl.id         = n_slabs_++;
         sl.format_tag = format_tag;
-        sl.slot_bytes = data_bytes;
-        size_t total  = (size_t)capacity_ * data_bytes;
+        /* Every accepted write is bounded by max_slot_bytes_. Allocate the
+         * slab at that pitch so a later, larger payload for the same tag
+         * cannot spill into neighbouring slots. */
+        sl.slot_bytes = max_slot_bytes_;
+        size_t total  = (size_t)capacity_ * (size_t)max_slot_bytes_;
         sl.data = static_cast<uint8_t *>(aligned_alloc_64(total));
         if (!sl.data) throw std::bad_alloc();
         memset(sl.data, 0, total);
