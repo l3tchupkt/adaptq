@@ -158,6 +158,54 @@ TEST_CASE("SegmentedSlabStorage: multiple format_tags are independent", "[storag
     REQUIRE(std::abs(r4b.scale - 3.f) < 1e-6f);
 }
 
+TEST_CASE("SegmentedSlabStorage: larger payload after smaller one does not corrupt neighbors", "[storage][segmented]") {
+    SegmentedSlabStorage st;
+    st.init(4, 16);
+
+    std::vector<StorageSlot> small_slots;
+    for (int i = 0; i < 4; ++i) {
+        auto d = make_data(4, (uint8_t)(0x11 + i));
+        small_slots.push_back(st.write(d.data(), 4, (float)i, 0x02));
+        CompressResult r = st.read(small_slots.back());
+        REQUIRE(r.data != nullptr);
+        REQUIRE(r.data_bytes == 4);
+        REQUIRE(r.data[0] == (uint8_t)(0x11 + i));
+    }
+
+    /* The ring wraps to slot 0. The new payload is larger than the first
+     * write for this tag, but it must stay inside its own slot. */
+    auto large = make_data(16, 0x20);
+    StorageSlot large_slot = st.write(large.data(), 16, 9.f, 0x02);
+    REQUIRE(large_slot == small_slots[0]);
+
+    CompressResult lr = st.read(large_slot);
+    REQUIRE(lr.data != nullptr);
+    REQUIRE(lr.data_bytes == 16);
+    for (int i = 0; i < 16; ++i) REQUIRE(lr.data[i] == 0x20);
+
+    /* Slots 1..3 were not evicted, so their payloads must be unchanged. */
+    for (int i = 1; i < 4; ++i) {
+        CompressResult r = st.read(small_slots[i]);
+        REQUIRE(r.data != nullptr);
+        REQUIRE(r.data_bytes == 4);
+        REQUIRE(r.data[0] == (uint8_t)(0x11 + i));
+    }
+}
+
+TEST_CASE("SegmentedSlabStorage: freed slots read as invalid", "[storage][segmented]") {
+    SegmentedSlabStorage st;
+    st.init(4, 8);
+    auto d = make_data(8, 0xAA);
+    StorageSlot slot = st.write(d.data(), 8, 1.f, 0x04);
+    REQUIRE(st.read(slot).data != nullptr);
+
+    st.free_slot(slot);
+    CompressResult r = st.read(slot);
+    REQUIRE(r.data == nullptr);
+    REQUIRE(r.data_bytes == 0);
+    REQUIRE(r.slot == ADAPTQ_INVALID_SLOT);
+}
+
 TEST_CASE("SegmentedSlabStorage: reset clears all slabs", "[storage][segmented]") {
     SegmentedSlabStorage st;
     st.init(16, 16);
