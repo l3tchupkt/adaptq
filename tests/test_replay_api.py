@@ -1,5 +1,6 @@
 import json
 import struct
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +16,19 @@ def _mock_run_factory(stdout):
         return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
 
     return run, calls
+
+
+def test_find_binary_discovers_windows_multiconfig_release(monkeypatch, tmp_path):
+    package_dir = tmp_path / "adaptq"
+    monkeypatch.setattr(replay_api, "__file__", str(package_dir / "replay.py"))
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr("shutil.which", lambda _: None)
+
+    binary = tmp_path / "build" / "Release" / "adapTQ_demo.exe"
+    binary.parent.mkdir(parents=True)
+    binary.touch()
+
+    assert replay_api._find_binary() == str(binary)
 
 
 def test_replay_forwards_output_format_and_path(monkeypatch, tmp_path):
