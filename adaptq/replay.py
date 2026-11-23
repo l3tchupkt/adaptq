@@ -34,7 +34,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 def _find_binary() -> Optional[str]:
-    """Find the adaptq CLI binary (build_v2/adapTQ_demo or system path)."""
+    """Find the adaptq CLI binary in local build directories or on PATH."""
     # 1. Check alongside this package (editable installs)
     pkg_dir = Path(__file__).parent.parent
     import sys
@@ -46,6 +46,9 @@ def _find_binary() -> Optional[str]:
         pkg_dir / "build" / binary_name,
         pkg_dir / "build_v2" / binary_name,   # legacy fallback
         pkg_dir / binary_name,
+        pkg_dir / "build_release" / "Release" / binary_name,
+        pkg_dir / "build" / "Release" / binary_name,
+        pkg_dir / "build_v2" / "Release" / binary_name,
     ]
     for p in candidates:
         if p.exists():
